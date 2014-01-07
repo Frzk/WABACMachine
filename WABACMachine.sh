@@ -6,7 +6,7 @@
 # The WABAC Machine.
 #
 # This script tries to mimic Apple's TimeMachine, *thanks to rsync* :)
-# Copyright François KUBLER, 2009-2013.
+# Copyright François KUBLER, 2009-2014.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2013-11-05
+# latest rev: 2014-01-06
 #-------------------------------------------------------------------------------
 #
 
@@ -46,7 +46,6 @@ snapshots_file="$lockdir/snaps.txt"
 
 # File that contains the list of backups we want to delete :
 kickout="$lockdir/kickout.txt"
-
 
 
 # # #   F U N C T I O N S   # # # # # # # # # # # # # # # # # # # # # # # # # # 
@@ -88,6 +87,16 @@ clean()
     rm -f "$keep_file"
     rm -f "$snapshots_file"
     rm -f "$kickout"
+}
+
+protect()
+{
+    chattr -Rf +i "$1"
+}
+
+unprotect()
+{
+    chattr -Rf -i "$1"
 }
 
 get_snapshots_list()
@@ -252,6 +261,7 @@ remove_useless()
 
     while read snap
     do
+        unprotect "$snap"
         rm -Rf "$snap"
         echo "Deleted $snap."
     done < "$kickout"
@@ -296,6 +306,11 @@ backup()
 {
     echo "Backing up to $dst/$now."
 
+    if [ ! -z "$link_dest" ]
+    then
+        unprotect "$link_dest"
+    fi
+
     rsync "${rsync_opts[@]}" "$src" "$dst/inProgress"
 
     cleanupexit $?
@@ -333,8 +348,9 @@ free_space()
         do
             get_oldest_snapshot
 
-            if [[ ! -z "$oldest" ]]
+            if [ ! -z "$oldest" ]
             then
+                unprotect "$oldest"
                 rm -Rf "$oldest"
                 available_space
                 echo "Deleted $oldest: $avail_space Mo now available."
@@ -352,6 +368,7 @@ prepare()
     # Builds rsync options, depending on the config and the existing backups.
     #
 
+    link_dest=""
     rsync_opts=(-ahS --numeric-ids)
     rsync_dryrun_opts=(-a --stats --dry-run)
 
@@ -369,6 +386,7 @@ prepare()
 
     if [ -h "$dst/latest" ]
     then
+        link_dest=$(readlink "$dst/latest")
         rsync_opts+=( --link-dest="$dst/latest")
         rsync_dryrun_opts+=( --link-dest="$dst/latest")
     fi
@@ -423,6 +441,12 @@ cleanupexit()
     then
         echo "$2">&2
     fi
+    
+    # Re-protect the backup that was used with link-dest :
+    if [ ! -z "$link_dest" ]
+    then
+        protect "$link_dest"
+    fi
 
     # Handle exit codes :
     #
@@ -437,6 +461,8 @@ cleanupexit()
         0|23|24)
             make_link
             echo "Backup done."
+            echo "Protecting backup."
+            protect "$latest"
             purge
             ;;
 
@@ -471,7 +497,11 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-# 1/ Checks if we have a specific config file :
+# 1/ Checks if we are root :
+
+[[ $EUID -eq 0 ]] || { echo "$(basename $0) must be run as root. Aborting."; exit 1; }
+
+# 2/ Checks if we have a specific config file :
 
 if [[ $1 == "-c" ]]
 then
@@ -480,15 +510,15 @@ else
     config_file="$selfdir/WABACMachine.conf"
 fi
 
-# 2/ Checks if the config_file exists :
+# 3/ Checks if the config_file exists :
 
 [[ -f "$config_file" ]] || { echo "Config file ($config_file) not found. Exiting."; exit 1; }
 
-# 3/ Loads the config_file:
+# 4/ Loads the config_file:
 
 source "$config_file"
 
-# 4/ Runs :
+# 5/ Runs :
 
 run
 

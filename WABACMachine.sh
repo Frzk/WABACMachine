@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-01-06
+# latest rev: 2014-04-08
 #-------------------------------------------------------------------------------
 #
 
@@ -478,6 +478,36 @@ cleanupexit()
     exit $1
 }
 
+usage()
+{
+    cat <<EOH
+WABAC Machine version $VERSION.
+
+Copyright (C) 2009-2014 by François Kubler.
+<https://github.com/Frzk/WABACMachine/>
+
+WABACMachine.sh comes with ABSOLUTELY NO WARRANTY.  This is free software, and you
+are welcome to redistribute it under certain conditions.  See the GNU
+General Public Licence for details.
+
+WABAC Machine is a wrapper for rsync that will help you backup your files.
+
+USAGE:  WABACMachine.sh [-h | --help] [-c | --config CONFIG_FILE]
+
+OPTIONS:
+  -h, --help                Show HELP (this output)
+  -c, --config CONFIG_FILE  Read configuration from CONFIG_FILE
+
+FILES:
+  WABACMachine.sh           The backup script
+  WABACMachine.conf         The default config file
+  exclude                   The filter rules
+
+Head over https://github.com/Frzk/WABACMachine/ for further information and help.
+
+EOH
+}
+
 run()
 {
     # Lock :
@@ -497,18 +527,32 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
+VERSION=20140408
+
 # 1/ Checks if we are root :
 
 [[ $EUID -eq 0 ]] || { echo "$(basename $0) must be run as root. Aborting."; exit 1; }
 
-# 2/ Checks if we have a specific config file :
+# 2/ Parses options :
 
-if [[ $1 == "-c" ]]
-then
-    config_file="$2"
-else
-    config_file="$selfdir/WABACMachine.conf"
-fi
+config_file="$selfdir/WABACMachine.conf"
+
+while [ "$1" != "" ]; do
+    case $1 in
+        -c | --config )
+            shift
+            config_file=$1
+            ;;
+        -h | --help )
+            usage
+            exit 1
+            ;;
+        * )
+            usage
+            exit 1
+    esac
+    shift
+done
 
 # 3/ Checks if the config_file exists :
 

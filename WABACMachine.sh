@@ -47,6 +47,9 @@ snapshots_file="$lockdir/snaps.txt"
 # File that contains the list of backups we want to delete :
 kickout="$lockdir/kickout.txt"
 
+# Whether use a verbose output or not :
+verbose=false
+
 
 # # #   F U N C T I O N S   # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
@@ -369,8 +372,13 @@ prepare()
     #
 
     link_dest=""
-    rsync_opts=(-ahS --numeric-ids)
+    rsync_opts=(-ahAXS --numeric-ids)
     rsync_dryrun_opts=(-a --stats --dry-run)
+
+    if [ "$verbose" = true ]
+    then
+        rsync_opts+=( -v)
+    fi
 
     if [ "$exclude_file" != "" ]
     then
@@ -492,11 +500,12 @@ General Public Licence for details.
 
 WABAC Machine is a wrapper for rsync that will help you backup your files.
 
-USAGE:  WABACMachine.sh [-h | --help] [-c | --config CONFIG_FILE]
+USAGE:  WABACMachine.sh [-h | --help] [-v | --verbose] [-c | --config CONFIG_FILE]
 
 OPTIONS:
-  -h, --help                Show HELP (this output)
-  -c, --config CONFIG_FILE  Read configuration from CONFIG_FILE
+  -c, --config CONFIG_FILE  Read configuration from CONFIG_FILE.
+  -h, --help                Show HELP (this output).
+  -v, --verbose             Produce verbose output. Useful if you want to check what is saved or to complete your exclude file.
 
 FILES:
   WABACMachine.sh           The backup script
@@ -527,7 +536,7 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140408
+VERSION=20140525
 
 # 1/ Checks if we are root :
 
@@ -542,6 +551,9 @@ while [ "$1" != "" ]; do
         -c | --config )
             shift
             config_file=$1
+            ;;
+        -v | --verbose )
+            verbose=true
             ;;
         -h | --help )
             usage

@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-04-08
+# latest rev: 2014-06-17
 #-------------------------------------------------------------------------------
 #
 
@@ -102,25 +102,19 @@ unprotect()
     chattr -Rf -i "$1"
 }
 
-get_snapshots_list()
+get_snapshots()
 {
-    find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort > "$snapshots_file"
+    find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort
 }
 
 get_oldest_snapshot()
 {
-    oldest=$(find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort | head -n 1)
-
-    local tstamp=$(stat -c %y "$oldest" | cut -f 1 -d" ")
-    oldest_save=$(date --date "$tstamp" "+%F")
+    get_snapshots | head -n 1
 }
 
 get_latest_snapshot()
 {
-    latest=$(find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort | tail -n 1)
-
-    local tstamp=$(stat -c %y "$latest" | cut -f 1 -d" ")
-    latest_save=$(date --date "$tstamp" "+%F")
+    get_snapshots | tail -n 1
 }
 
 keep_all()
@@ -150,8 +144,9 @@ keep_one_per_day()
     # Checks that we have an integer as argument :
     [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_day requires an integer." 2>&1; exit 1; }
 
-    # Reset date_ref to latest_save.
-    local date_ref="$latest_save"
+    # Reset date_ref :
+    local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
+    local date_ref=$(date --date "$tstamp" "+%F")
 
     for ((i=0 ; i<$1 ; i++ ))
     do
@@ -175,8 +170,9 @@ keep_one_per_week()
     # Checks that we have an integer as argument :
     [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_week requires an integer." 2>&1; exit 1; }
 
-    # Reset date_ref to latest_save.
-    local date_ref="$latest_save"
+    # Reset date_ref :
+    local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
+    local date_ref=$(date --date "$tstamp" "+%F")
 
     for ((i=0 ; i<$1 ; i++ ))
     do
@@ -200,8 +196,9 @@ keep_one_per_month()
     # Checks that we have an integer as argument :
     [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_month requires an integer." 2>&1; exit 1; }
 
-    # Reset date_ref to latest_save.
-    local date_ref="$latest_save"
+    # Reset date_ref :
+    local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
+    local date_ref=$(date --date "$tstamp" "+%F")
 
     for ((i=0 ; i<$1 ; i++ ))
     do
@@ -222,6 +219,9 @@ keep_one_per_year()
     # Keeps one backup per year for all the last years.
     #
 
+    local tstamp=$(stat -c %y "$(get_oldest_snapshot)" | cut -f 1 -d" ")
+    local oldest_save=$(date --date "$tstamp" "+%F")
+
     local first_year=$(date --date "$oldest_save" "+%Y")
     local latest_year=$(date --date "now +1year" "+%Y")
 
@@ -240,8 +240,8 @@ keep_between()
     #
 
     [[ "$#" -eq 2 ]] || { echo "keep_between takes exactly 2 args." >2; exit 1; }
-    (echo "$1" | grep -E "[0-9]{4}-[0-9]{2}-[0-9]{2}" > /dev/null) || { echo "Wrong date : $1" >&2; exit 1; }
-    (echo "$2" | grep -E "[0-9]{4}-[0-9]{2}-[0-9]{2}" > /dev/null) || { echo "Wrong date : $2" >&2; exit 1; }
+    (echo "$1" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { echo "Wrong date : $1" >&2; exit 1; }
+    (echo "$2" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { echo "Wrong date : $2" >&2; exit 1; }
 
     # Keeps one snapshot for the interval [$1 ; $2[
     find "$dst" -maxdepth 1 -type d \( -newermt "$1" -a ! -newermt "$2" \) | grep -E "$snap_exp" | sort | tail -n 1 >> "$keep_file"
@@ -256,6 +256,7 @@ remove_useless()
     #   Sorts the two files, merges them and removes duplicates.
     #   > man sort for further details.
     #   > man uniq for further details.
+    get_snapshots > "$snapshots_file"
     sort "$keep_file" "$snapshots_file" | uniq -u > "$kickout"
 
     # Removes what's useless :
@@ -280,18 +281,13 @@ make_link()
     mv "$dst/inProgress" "$dst/$now"
 
     # Build the new "latest" link :
-    get_latest_snapshot
     rm -f "$dst/latest"
-    ln -s "$latest" "$dst/latest"
+    ln -s "$(get_latest_snapshot)" "$dst/latest"
 }
 
 purge()
 {
     echo "Starting post-backup thinning."
-
-    get_snapshots_list
-    get_oldest_snapshot
-    #get_latest_snapshot has just been called in make_link.
 
     keep_all "$nb_hours"
     keep_one_per_day "$nb_days"
@@ -349,7 +345,7 @@ free_space()
 
         while [ "$needed_space" -gt "$avail_space" ]
         do
-            get_oldest_snapshot
+            local oldest=$(get_oldest_snapshot)
 
             if [ ! -z "$oldest" ]
             then
@@ -470,7 +466,7 @@ cleanupexit()
             make_link
             echo "Backup done."
             echo "Protecting backup."
-            protect "$latest"
+            protect "$(get_latest_snapshot)"
             purge
             ;;
 
@@ -536,7 +532,7 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140525
+VERSION=20140617
 
 # 1/ Checks if we are root :
 

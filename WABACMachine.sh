@@ -261,7 +261,18 @@ remove_useless()
 
     # Removes what's useless :
     local nb_rem=$(cat "$kickout" | wc -l | tr -d " ")
-    echo "$nb_rem backups are to be removed."
+    
+    case "$nb_rem" in
+    "0")
+        echo "Nothing to do."
+        ;;
+    "1")
+        echo "One backup to be removed."
+        ;;
+    *)
+        echo "$nb_rem backups to be removed."
+        ;;
+    esac
 
     while read snap
     do

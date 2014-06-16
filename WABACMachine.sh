@@ -104,12 +104,12 @@ unprotect()
 
 get_snapshots_list()
 {
-    find "$dst" -maxdepth 1 -type d | grep -E "$exp" | sort > "$snapshots_file"
+    find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort > "$snapshots_file"
 }
 
 get_oldest_snapshot()
 {
-    oldest=$(find "$dst" -maxdepth 1 -type d | grep -E "$exp" | sort | head -n 1)
+    oldest=$(find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort | head -n 1)
 
     local tstamp=$(stat -c %y "$oldest" | cut -f 1 -d" ")
     oldest_save=$(date --date "$tstamp" "+%F")
@@ -117,7 +117,7 @@ get_oldest_snapshot()
 
 get_latest_snapshot()
 {
-    latest=$(find "$dst" -maxdepth 1 -type d | grep -E "$exp" | sort | tail -n 1)
+    latest=$(find "$dst" -maxdepth 1 -type d | grep -E "$snap_exp" | sort | tail -n 1)
 
     local tstamp=$(stat -c %y "$latest" | cut -f 1 -d" ")
     latest_save=$(date --date "$tstamp" "+%F")
@@ -136,7 +136,7 @@ keep_all()
 
     local hours=$(($1*60))
 
-    find "$dst" -maxdepth 1 -mmin -"$hours" | grep -E "$exp" | sort >> "$keep_file"
+    find "$dst" -maxdepth 1 -type d -mmin -"$hours" | grep -E "$snap_exp" | sort >> "$keep_file"
 }
 
 keep_one_per_day()
@@ -240,11 +240,11 @@ keep_between()
     #
 
     [[ "$#" -eq 2 ]] || { echo "keep_between takes exactly 2 args." >2; exit 1; }
-    (echo "$1" | grep -E "$exp" > /dev/null) || { echo "Wrong date : $1" >&2; exit 1; }
-    (echo "$2" | grep -E "$exp" > /dev/null) || { echo "Wrong date : $2" >&2; exit 1; }
+    (echo "$1" | grep -E "[0-9]{4}-[0-9]{2}-[0-9]{2}" > /dev/null) || { echo "Wrong date : $1" >&2; exit 1; }
+    (echo "$2" | grep -E "[0-9]{4}-[0-9]{2}-[0-9]{2}" > /dev/null) || { echo "Wrong date : $2" >&2; exit 1; }
 
     # Keeps one snapshot for the interval [$1 ; $2[
-    find "$dst" -maxdepth 1 \( -newermt "$1" -a ! -newermt "$2" \) | grep -E "$exp" | sort | tail -n 1 >> "$keep_file"
+    find "$dst" -maxdepth 1 -type d \( -newermt "$1" -a ! -newermt "$2" \) | grep -E "$snap_exp" | sort | tail -n 1 >> "$keep_file"
 }
 
 remove_useless()
@@ -400,7 +400,7 @@ prepare()
     fi
 
     # Dates :
-    exp="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    snap_exp=".*/[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}"
     now=$(date "+%Y-%m-%d %H:%M:%S")
 }
 

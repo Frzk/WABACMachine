@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-06-17
+# latest rev: 2014-07-10
 #-------------------------------------------------------------------------------
 #
 
@@ -321,7 +321,7 @@ backup()
         unprotect "$link_dest"
     fi
 
-    rsync "${rsync_opts[@]}" "$src" "$dst/inProgress"
+    rsync "${opts[@]}" "$src" "$dst/inProgress"
 
     cleanupexit $?
 }
@@ -379,19 +379,18 @@ prepare()
     #
 
     link_dest=""
-    rsync_opts=(-ahAXS --numeric-ids)
     rsync_dryrun_opts=(-a --stats --dry-run)
 
     if [ "$verbose" = true ]
     then
-        rsync_opts+=( -v)
+        opts+=(-v)
     fi
 
     if [ "$exclude_file" != "" ]
     then
         if [ -f "$exclude_file" ]
         then
-            rsync_opts+=( --exclude-from="$exclude_file")
+            opts+=(--exclude-from="$exclude_file")
             rsync_dryrun_opts+=( --exclude-from="$exclude_file")
         else
             echo "The given exclude file does not exist. Please fix your config file. Aborting."
@@ -402,7 +401,7 @@ prepare()
     if [ -h "$dst/latest" ]
     then
         link_dest=$(readlink "$dst/latest")
-        rsync_opts+=( --link-dest="$dst/latest")
+        opts+=(--link-dest="$dst/latest")
         rsync_dryrun_opts+=( --link-dest="$dst/latest")
     fi
 
@@ -543,7 +542,7 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140617
+VERSION=20140710
 
 # 1/ Checks if we are root :
 

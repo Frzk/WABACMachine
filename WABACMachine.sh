@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-07-10
+# latest rev: 2014-07-21
 #-------------------------------------------------------------------------------
 #
 
@@ -65,8 +65,8 @@ check_mounted()
         if [ "$?" -ne "0" ]
         then
             echo "failed."
-            local err="Unable to mount $vol, aborting !"
-            cleanupexit 2 "$err"
+            errmsg="Unable to mount $vol, aborting !"
+            cleanupexit 1 "$errmsg"
         fi
 
         echo "OK."
@@ -123,7 +123,7 @@ keep_all()
     #
 
     # Checks that we have an integer as argument :
-    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_all requires an integer." 2>&1; exit 1; }
+    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { error_exit 1 "keep_all requires an integer."; }
 
     local hours=$(($1*60))
 
@@ -139,7 +139,7 @@ keep_one_per_day()
     #
 
     # Checks that we have an integer as argument :
-    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_day requires an integer." 2>&1; exit 1; }
+    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { error_exit 1 "keep_one_per_day requires an integer."; }
 
     # Reset date_ref :
     local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
@@ -165,7 +165,7 @@ keep_one_per_week()
     #
 
     # Checks that we have an integer as argument :
-    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_week requires an integer." 2>&1; exit 1; }
+    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { error_exit 1 "keep_one_per_week requires an integer."; }
 
     # Reset date_ref :
     local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
@@ -191,7 +191,7 @@ keep_one_per_month()
     #
 
     # Checks that we have an integer as argument :
-    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { echo "keep_one_per_month requires an integer." 2>&1; exit 1; }
+    [[ -n "$1" ]] && [[ $1 != *[!0-9]* ]] || { error_exit 1 "keep_one_per_month requires an integer."; }
 
     # Reset date_ref :
     local tstamp=$(stat -c %y "$(get_latest_snapshot)" | cut -f 1 -d" ")
@@ -236,9 +236,9 @@ keep_between()
     # Keeps one backup betwen the two given dates.
     #
 
-    [[ "$#" -eq 2 ]] || { echo "keep_between takes exactly 2 args." >2; exit 1; }
-    (echo "$1" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { echo "Wrong date : $1" >&2; exit 1; }
-    (echo "$2" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { echo "Wrong date : $2" >&2; exit 1; }
+    [[ "$#" -eq 2 ]] || { error_exit 1 "keep_between takes exactly 2 args."; }
+    (echo "$1" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { error_exit 1 "Wrong date : $1"; }
+    (echo "$2" | grep -E "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" > /dev/null) || { error_exit 1 "Wrong date : $2"; }
 
     # Keeps one snapshot for the interval [$1 ; $2[
     find "$dst" -maxdepth 1 -type d \( -newermt "$1" -a ! -newermt "$2" \) | grep -E "$snap_exp" | sort | tail -n 1 >> "$keep_file"
@@ -413,8 +413,8 @@ lock()
         echo "Successfully acquired lock : starting new backup."
         echo $$ > "$lockdir/pid"
     else
-        echo "Couldn't acquire lock (hold by $(<$lockdir/pid)). The WABAC Machine is already running. Aborting."
-        exit 1
+        errmsg="Couldn't acquire lock (hold by $(<$lockdir/pid)). The WABAC Machine is already running. Aborting."
+        error_exit 1 "$errmsg"
     fi
 }
 
@@ -425,6 +425,12 @@ unlock()
     #
 
     rm -Rf "$lockdir"
+}
+
+error_exit()
+{
+    echo "$2" 2>&1
+    exit $1
 }
 
 cleanupexit()
@@ -533,11 +539,11 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140710
+VERSION=20140721
 
 # 1/ Checks if we are root :
 
-[[ $EUID -eq 0 ]] || { echo "$(basename $0) must be run as root. Aborting."; exit 1; }
+[[ $EUID -eq 0 ]] || { error_exit 1 "$(basename $0) must be run as root. Aborting."; }
 
 # 2/ Parses options :
 
@@ -562,7 +568,7 @@ done
 
 # 3/ Checks if the config_file exists :
 
-[[ -f "$config_file" ]] || { echo "Config file ($config_file) not found. Exiting."; exit 1; }
+[[ -f "$config_file" ]] || { error_exit 1 "Config file ($config_file) not found. Exiting."; }
 
 # 4/ Loads the config_file:
 

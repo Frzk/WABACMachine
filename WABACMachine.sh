@@ -282,6 +282,18 @@ remove_useless()
     rm -f "$keep_file"
 }
 
+available_space()
+{
+    local df_output=$(df -m $dst | grep "/dev" | tr -s " ")
+    
+    local avail_space_mo=$(echo $df_output | cut -d" " -f4)
+    
+    local occupied=$(echo $df_output | cut -d" " -f5 | cut -d"%" -f1)
+    local avail_space_perc=$((100 - occupied))
+
+    echo "Free space : $avail_space_perc% ($avail_space_mo Mo)."
+}
+
 make_link()
 {
     # Rename the "inProgress" backup :
@@ -533,6 +545,7 @@ run()
     clean
     free_space
     backup
+    available_space
 }
 
 

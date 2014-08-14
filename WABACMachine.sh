@@ -343,52 +343,43 @@ backup()
 
     if [ ! -z "$link_dest" ]
     then
+        echo "Using $link_dest as ref."
         unprotect "$link_dest"
     fi
 
-    rsync "${opts[@]}" "$src" "$dst/inProgress"
+    completed=false
+    
+    until $completed
+    do
+        rsync "${opts[@]}" "$src" "$dst/inProgress" 2> "$err_file"
+        rsync_exit_code=$?
 
-    error_exit $? "rsync failed."
-}
+        local no_space_left="$(grep "No space left on device (28)\|Result too large (34)" "$err_file")"
 
-needed_space()
-{
-    needed_space=$(rsync "${rsync_dryrun_opts[@]}" "$src" "$dst/inProgress/" | grep "Total transferred file size" | tr -d "," | tr -s " " | cut -d" " -f5)
-    needed_space=$((needed_space*120/100))          # +20% margin
-    needed_space=$((needed_space/(1024*1024)))
-}
-
-free_space()
-{
-    # Checks if nwm has enough space to backup the files.
-    # If not, it tries to delete the oldest backups until there is enough free space.
-    #
-
-    # Let's see what we need :
-    needed_space
-    # And what we have :
-    available_space
-
-    # Removes oldest backup until there is enough space :
-    if [ "$needed_space" -gt "$avail_space" ]
-    then
-        echo "Starting pre-backup thinning: $needed_space Mo requested, $avail_space Mo available."
-
-        while [ "$needed_space" -gt "$avail_space" ]
-        do
-            local oldest=$(get_oldest_snapshot)
-
-            if [ ! -z "$oldest" ]
-            then
-                remove_snapshot "$oldest"
-                available_space
-            else
-                error_exit 1 "Not enough space on $dst."
-            fi
-        done
-    else
-        echo "No pre-backup thinning needed: $needed_space Mo requested, $avail_space Mo available."
-    fi
+        if [ -n "$no_space_left" ]
+        then
+            remove_oldest
+        else
+            completed=true
+        fi
+    done
+    
+    # We ignore rsync error code 23 and 24
+    #     23 : Some files/attrs were not transferred. We consider the backup as OK.
+    #     24 : Some files have vanished during the backup. We still consider the backup as OK.
+    case $rsync_exit_code in
+        0|23|24)
+            make_link
+            echo "Backup done."
+            echo "Protecting backup."
+            protect "$(get_latest_snapshot)"
+            purge
+            ;;
+        *)
+            errmsg="An error occured while backing up ($rsync_exit_code). Please check your log to see what happend."
+            error_exit $rsync_exit_code "$errmsg"
+            ;;
+    esac
 }
 
 prepare()
@@ -396,15 +387,11 @@ prepare()
     # Builds rsync options, depending on the config and the existing backups.
     #
 
-    link_dest=""
-    rsync_dryrun_opts=(-a --stats --dry-run)
-
     if [ "$exclude_file" != "" ]
     then
         if [ -f "$exclude_file" ]
         then
             opts+=(--exclude-from="$exclude_file")
-            rsync_dryrun_opts+=( --exclude-from="$exclude_file")
         else
             errmsg="The given exclude file does not exist. Please fix your config file. Aborting."
             error_exit 1 "$errmsg"
@@ -415,7 +402,6 @@ prepare()
     then
         link_dest=$(readlink "$dst/latest")
         opts+=(--link-dest="$dst/latest")
-        rsync_dryrun_opts+=( --link-dest="$dst/latest")
     fi
 
     # Dates :
@@ -543,7 +529,6 @@ run()
     prepare
     check_mounted
     clean
-    free_space
     backup
     available_space
 }
@@ -555,11 +540,9 @@ run()
 VERSION=20140815
 
 # 1/ Checks if we are root :
-
 [[ $EUID -eq 0 ]] || { error_exit 1 "$(basename $0) must be run as root. Aborting."; }
 
 # 2/ Parses options :
-
 config_file="$selfdir/WABACMachine.conf"
 
 while [ "$1" != "" ]; do
@@ -580,20 +563,15 @@ while [ "$1" != "" ]; do
 done
 
 # 3/ Checks if the config_file exists :
-
 [[ -f "$config_file" ]] || { error_exit 1 "Config file ($config_file) not found. Exiting."; }
 
 # 4/ Loads the config_file:
-
 source "$config_file"
 
 # 5/ Runs :
-
 run
 
-
-# This should never be reached :
+# 6/ This should never be reached :
 exit 0
-
 
 #EOF

@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-08-14
+# latest rev: 2014-08-15
 #-------------------------------------------------------------------------------
 #
 
@@ -46,6 +46,9 @@ snapshots_file="$lockdir/snaps.txt"
 
 # File that contains the list of backups we want to delete :
 kickout="$lockdir/kickout.txt"
+
+# File that contains rsync call errors :
+err_file="$lockdir/errors.txt"
 
 
 # # #   F U N C T I O N S   # # # # # # # # # # # # # # # # # # # # # # # # # # 
@@ -81,6 +84,7 @@ clean()
     rm -f "$keep_file"
     rm -f "$snapshots_file"
     rm -f "$kickout"
+    rm -f "$err_file"
 }
 
 protect()
@@ -281,6 +285,35 @@ remove_useless()
     rm -f "$keep_file"
 }
 
+remove_oldest()
+{
+    local nb_backups=$(get_snapshots | wc -l)
+
+    if [ $nb_backups -gt 1 ]
+    then
+        local oldest="$(get_oldest_snapshot)"
+        remove_snapshot "$oldest"
+        available_space
+    else
+        error_exit 1 "Seems like we need some space, but there's nothing left to remove !"
+    fi
+}
+
+purge()
+{
+    echo "Starting post-backup thinning."
+
+    keep_all "$nb_hours"
+    keep_one_per_day "$nb_days"
+    keep_one_per_week "$nb_weeks"
+    keep_one_per_month "$nb_months"
+    keep_one_per_year
+
+    remove_useless
+
+    echo "Post-backup thinning done."
+}
+
 available_space()
 {
     local df_output=$(df -m $dst | grep "/dev" | tr -s " ")
@@ -304,22 +337,6 @@ make_link()
     ln -s "$(get_latest_snapshot)" "$dst/latest"
 }
 
-purge()
-{
-    echo "Starting post-backup thinning."
-
-    keep_all "$nb_hours"
-    keep_one_per_day "$nb_days"
-    keep_one_per_week "$nb_weeks"
-    keep_one_per_month "$nb_months"
-    keep_one_per_year
-
-    remove_useless
-
-    echo "Post-backup thinning done."
-}
-
-
 backup()
 {
     echo "Backing up to $dst/$now."
@@ -339,11 +356,6 @@ needed_space()
     needed_space=$(rsync "${rsync_dryrun_opts[@]}" "$src" "$dst/inProgress/" | grep "Total transferred file size" | tr -d "," | tr -s " " | cut -d" " -f5)
     needed_space=$((needed_space*120/100))          # +20% margin
     needed_space=$((needed_space/(1024*1024)))
-}
-
-available_space()
-{
-    avail_space=$(df -m "$dst" | grep "/dev" | tr -s " " | cut -d" " -f4)
 }
 
 free_space()
@@ -540,7 +552,7 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140814
+VERSION=20140815
 
 # 1/ Checks if we are root :
 

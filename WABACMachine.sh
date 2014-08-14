@@ -25,7 +25,7 @@
 #-------------------------------------------------------------------------------
 #
 #-------------------------------------------------------------------------------
-# latest rev: 2014-07-21
+# latest rev: 2014-08-14
 #-------------------------------------------------------------------------------
 #
 
@@ -66,7 +66,7 @@ check_mounted()
         then
             echo "failed."
             errmsg="Unable to mount $vol, aborting !"
-            cleanupexit 1 "$errmsg"
+            error_exit 1 "$errmsg"
         fi
 
         echo "OK."
@@ -337,7 +337,7 @@ backup()
 
     rsync "${opts[@]}" "$src" "$dst/inProgress"
 
-    cleanupexit $?
+    error_exit $? "rsync failed."
 }
 
 needed_space()
@@ -377,7 +377,7 @@ free_space()
                 remove_snapshot "$oldest"
                 available_space
             else
-                cleanupexit 3 "Not enough space on $dst."
+                error_exit 1 "Not enough space on $dst."
             fi
         done
     else
@@ -400,8 +400,8 @@ prepare()
             opts+=(--exclude-from="$exclude_file")
             rsync_dryrun_opts+=( --exclude-from="$exclude_file")
         else
-            echo "The given exclude file does not exist. Please fix your config file. Aborting."
-            cleanupexit 1
+            errmsg="The given exclude file does not exist. Please fix your config file. Aborting."
+            error_exit 1 "$errmsg"
         fi
     fi
 
@@ -444,65 +444,60 @@ unlock()
 
 error_exit()
 {
-    echo "$2" 2>&1
+    echo "$2"
     exit $1
 }
 
-cleanupexit()
+setup_traps()
+{
+    trap "handle_exit" EXIT
+    trap "handle_signals" INT TERM HUP QUIT
+}
+
+remove_traps()
+{
+    trap - EXIT INT TERM HUP QUIT
+}
+
+handle_signals()
+{
+    sig=$?
+
+    if [ $sig -gt 127 ]
+    then
+        let sig-=128
+        local signame=$(kill -l $sig)
+    else
+        local signame="RSYNC_INTERRUPT"
+    fi
+
+    errmsg="The WABAC Machine has been interrupted ($signame) !"
+    error_exit $sig "$errmsg"
+
+    # Propagate SIGHUP, SIGTERM and SIGINT :
+    #kill -s $sig $$
+}
+
+handle_exit()
 {
     # This is the exit door of the WABAC Machine.
-    # It does several things :
-    #   * Resets trap to its default behavior.
-    #   * Rotates the backups.
-    #   * Smartly removes old backups.
-    #   * Removes the lock file.
-    #   * Unmount everything that needs to be unmounted.
-    #   * Exit.
     #
+    errno=$?
 
-    # Reset default error handler :
-    trap - SIGHUP SIGINT SIGTERM ERR
+    # Reset traps :
+    remove_traps
 
-    # Print error message if any :
-    if [ "$2" != "" ]
-    then
-        echo "$2">&2
-    fi
-    
     # Re-protect the backup that was used with link-dest :
     if [ ! -z "$link_dest" ]
     then
         protect "$link_dest"
     fi
 
-    # Handle exit codes :
-    #
-    #   We have 4 cases :
-    #     0  : Everything is OK, we just have to rotate the backups and purge them.
-    #     23 : Some files/attrs were not transferred. We consider the backup as OK.
-    #     24 : Some files have vanished during the backup. We still consider the backup as OK.
-    #     *  : Something went wrong ! We keep the failing backup as it is. We do not rotate. We do not purge.
-    #
-
-    case $1 in
-        0|23|24)
-            make_link
-            echo "Backup done."
-            echo "Protecting backup."
-            protect "$(get_latest_snapshot)"
-            purge
-            ;;
-
-        *)
-            echo "Backup exited with code $1." 2>&1
-            echo "WARNING: An error occured while backing up. The backup might be incomplete or corrupt !"
-            ;;
-    esac
-
-    # Unlock : deletes all temp files and allows another instance of the WABAC Machine to run :
+    # Unlock so another instance can run :
     unlock
 
-    exit $1
+    # And finally exit :
+    exit $errno
 }
 
 usage()
@@ -537,12 +532,8 @@ EOH
 
 run()
 {
-    # Lock :
     lock
-
-    # Signals trap :
-    trap "cleanupexit" SIGHUP SIGINT SIGTERM ERR
-
+    setup_traps
     prepare
     check_mounted
     clean
@@ -555,7 +546,7 @@ run()
 
 # # #   R U N   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 
-VERSION=20140721
+VERSION=20140814
 
 # 1/ Checks if we are root :
 
@@ -596,8 +587,7 @@ run
 
 
 # This should never be reached :
-
-cleanupexit 0
+exit 0
 
 
 #EOF

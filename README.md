@@ -21,6 +21,10 @@ The WABAC Machine is a simple but powerful **backup** utility inspired by Apple'
 
   * Automatically deletes oldest backups when the destination volume runs out of space.
 
+  * Resumes failed/interrupted file transfers.
+
+  * Resumes failed/interrupted backups.
+
   * External config file.
 
   * *latest* symbolic points to the last successful backup.

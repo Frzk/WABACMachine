@@ -75,14 +75,8 @@ check_mounted()
 
 clean()
 {
-    # Makes sure a potentially existing "inProgress" backup is deleted.
     # Makes sure every needed file is empty.
     #
-
-    if [ -d "$dst/inProgress" ]
-    then
-        rm -Rf "$dst/inProgress"
-    fi
 
     rm -f "$keep_file"
     rm -f "$snapshots_file"

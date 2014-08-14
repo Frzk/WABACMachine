@@ -244,6 +244,13 @@ keep_between()
     find "$dst" -maxdepth 1 -type d \( -newermt "$1" -a ! -newermt "$2" \) | grep -E "$snap_exp" | sort | tail -n 1 >> "$keep_file"
 }
 
+remove_snapshot()
+{
+    unprotect "$1"
+    rm -Rf "$1"
+    echo "Deleted $1."
+}
+
 remove_useless()
 {
     # Removes useless snapshots (those that are not listed in $keep_file).
@@ -273,9 +280,7 @@ remove_useless()
 
     while read snap
     do
-        unprotect "$snap"
-        rm -Rf "$snap"
-        echo "Deleted $snap."
+        remove_snapshot "$snap"
     done < "$kickout"
 
     rm -f "$snapshots_file"
@@ -369,10 +374,8 @@ free_space()
 
             if [ ! -z "$oldest" ]
             then
-                unprotect "$oldest"
-                rm -Rf "$oldest"
+                remove_snapshot "$oldest"
                 available_space
-                echo "Deleted $oldest: $avail_space Mo now available."
             else
                 cleanupexit 3 "Not enough space on $dst."
             fi

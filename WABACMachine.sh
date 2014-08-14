@@ -258,7 +258,7 @@ remove_useless()
     sort "$keep_file" "$snapshots_file" | uniq -u > "$kickout"
 
     # Removes what's useless :
-    local nb_rem=$(cat "$kickout" | wc -l | tr -d " ")
+    local nb_rem=$(wc -l < "$kickout")
     
     case "$nb_rem" in
     "0")
@@ -285,9 +285,9 @@ available_space()
 {
     local df_output=$(df -m $dst | grep "/dev" | tr -s " ")
     
-    local avail_space_mo=$(echo $df_output | cut -d" " -f4)
+    local avail_space_mo=$(cut -d" " -f4 <<< "$df_output")
     
-    local occupied=$(echo $df_output | cut -d" " -f5 | cut -d"%" -f1)
+    local occupied=$(cut -d" " -f5 <<< "$df_output" | cut -d"%" -f1)
     local avail_space_perc=$((100 - occupied))
 
     echo "Free space : $avail_space_perc% ($avail_space_mo Mo)."

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 #-------------------------------------------------------------------------------
@@ -263,12 +263,12 @@ remove_useless()
 
     # Removes what's useless :
     local nb_rem=$(wc -l < "$kickout")
-    
-    case "$nb_rem" in
-    "0")
+
+    case $nb_rem in
+    0)
         echo "Nothing to do."
         ;;
-    "1")
+    1)
         echo "One backup to be removed."
         ;;
     *)
@@ -348,9 +348,10 @@ backup()
     fi
 
     completed=false
-    
+
     until $completed
     do
+        rm -Rf "$err_file"
         rsync "${opts[@]}" "$src" "$dst/inProgress" 2> "$err_file"
         rsync_exit_code=$?
 
@@ -363,7 +364,7 @@ backup()
             completed=true
         fi
     done
-    
+
     # We ignore rsync error code 23 and 24
     #     23 : Some files/attrs were not transferred. We consider the backup as OK.
     #     24 : Some files have vanished during the backup. We still consider the backup as OK.
@@ -414,7 +415,7 @@ lock()
     # Tries to lock the WABAC Machine to ensure we run only one instance at the same time.
     # We use mkdir because it is atomic.
     #
-    
+
     if mkdir "$lockdir" 2>/dev/null
     then
         echo "Successfully acquired lock : starting new backup."
@@ -545,7 +546,8 @@ VERSION=20140815
 # 2/ Parses options :
 config_file="$selfdir/WABACMachine.conf"
 
-while [ "$1" != "" ]; do
+while [ "$1" != "" ]
+do
     case $1 in
         -c | --config )
             shift

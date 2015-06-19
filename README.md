@@ -1,6 +1,6 @@
 # The WABAC Machine
 
-The WABAC Machine is an open-source, simple yet powerful **backup** utility written for UNIX-like systems. It uses **rsync** to perform efficient backups with a smart retention strategy. It has been tested on GNU/Linux (ext3 and Btrfs filesystems) and OSX (HFS+ filesystem).
+The **WABAC Machine** is an open-source, simple yet powerful **backup** utility written for UNIX-like systems. It uses **rsync** to perform efficient backups with a smart retention strategy. It has been tested on GNU/Linux (ext3 and Btrfs filesystems) and OSX (HFS+ filesystem).
 
 ## Features
 

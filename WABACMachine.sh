@@ -1353,7 +1353,7 @@ handle_sigs()
         signame="RSYNC_INTERRUPTED"
     fi
 
-    printf "Received %s. Backup interrupted !" "${signame}" 1>&2
+    printf "Received %s. Backup interrupted !\n" "${signame}" 1>&2
 
     # Propagate :
     kill -s ${sig} $$

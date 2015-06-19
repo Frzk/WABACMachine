@@ -1620,7 +1620,7 @@ EOH
 # Appname and version :
 readonly APPNAME=$(basename "${0}")
 readonly APPDIR=$(cd "$(dirname "$0")"; pwd)    # Rather ugly but, well...
-readonly VERSION="201505xx-dev"
+readonly VERSION="20150619"
 
 # Date format :
 readonly date_regexp="[0-9]{4}-[0-9]{2}-[0-9]{2}"

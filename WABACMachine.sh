@@ -1369,7 +1369,6 @@ handle_exit()
     errno=$?
 
     remove_traps
-    printf "Exiting with exit code : %s.\n" "${errno}"
     exit ${errno}
 }
 

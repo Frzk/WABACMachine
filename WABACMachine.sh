@@ -115,7 +115,7 @@ run()
 
         # Starting...
         printf "Starting the WABAC Machine"
-        if [ ${dryrun} -eq 0 ]
+        if [ "${dryrun}" -eq 0 ]
         then
             printf " in DRY RUN MODE"
         fi
@@ -138,7 +138,7 @@ run()
         fi
 
         # Remove expired ?
-        if ([ "${action}" = "backup" ] && [ "${exit_code}" = "0" ] && [ "${keep_expired}" != "0" ]) || [ "${action}" = "remove-expired" ]
+        if ([ "${action}" = "backup" ] && [ "${exit_code}" -eq 0 ] && [ "${keep_expired}" -ne 0 ]) || [ "${action}" = "remove-expired" ]
         then
             remove_expired "${destination}" "${nb_hours}" "${nb_days}" "${nb_weeks}" "${nb_months}"
         fi
@@ -238,7 +238,7 @@ load_config()
     source "${1}" 2>/dev/null
     exit_code=$?
 
-    if [ "${exit_code}" != "0" ]
+    if [ "${exit_code}" -ne 0 ]
     then
         printf "Config file (%s) could not be read. Does it exist ?\n" "${1}" 1>&2
     fi
@@ -327,7 +327,7 @@ init()
     dst="${2}"
     cnf="${3}"
 
-    if [ ${exit_code} -eq 0 ]
+    if [ "${exit_code}" -eq 0 ]
     then
         # Create a default config file :
         if [ ! -f "${cnf}" ]
@@ -335,13 +335,13 @@ init()
             create_conf "${cnf}" "${src}" "${dst}"
             exit_code=$?
 
-            if [ ${exit_code} -eq 0 ]
+            if [ "${exit_code}" -eq 0 ]
             then
                 chmod 600 "${cnf}"
                 exit_code=$?
             fi
 
-            if [ ${exit_code} -ne 0 ]
+            if [ "${exit_code}" -ne 0 ]
             then
                 printf "An error occured while creating the config file (%s). Please check that it is complete and 'chmod 600' it.\n" "${cnf}" 1>&2
             fi
@@ -352,13 +352,13 @@ init()
     fi
 
     # Mark destination as being ready for the WABAC Machine :
-    if [ ${exit_code} -eq 0 ]
+    if [ "${exit_code}" -eq 0 ]
     then
         touch -- "${dst}/.wabac_machine_is_present"
         exit_code=$?
     fi
 
-    if [ ${exit_code} -eq 0 ]
+    if [ "${exit_code}" -eq 0 ]
     then
         printf "The WABAC Machine has been successfully initialized.\n"
 
@@ -505,29 +505,28 @@ backup()
     # Backup.
     # The first `if` check prevents from running if the `exclude_file` preference is
     # set but pointing to an unreadable file.
-    if [ ${exit_code} -eq 0 ]
+    if [ "${exit_code}" -eq 0 ]
     then
         # Get rsync path :
         rsync_cmd=$(get_rsync "${rsync_path}" 2>&1)
         exit_code=$?
 
-        if [ ${exit_code} -eq 0 ]
+        if [ "${exit_code}" -eq 0 ]
         then
             # Start the backup process.
-            while [ ${completed} -gt 0 ]
+            while [ "${completed}" -gt 0 ]
             do
                 rsync_output=$($rsync_cmd ${opts[@]} -- "${src}" "${dst}/inProgress" 2>&1)
                 exit_code=$?
 
-                grep --invert-match --quiet "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}"
-                completed=$?
+                completed=$(grep -c "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}")
 
-                if [ ${completed} -gt 0 ]
+                if [ "${completed}" -gt 0 ]
                 then
                     remove_oldest "${dst}"
                     remove_oldest_ok=$?
 
-                    if [ ${remove_oldest_ok} -ne 0 ]
+                    if [ "${remove_oldest_ok}" -ne 0 ]
                     then
                         completed=0     # Ends the while loop.
                         rsync_output=$(printf "No more space available on %s.\n" "${dst}")  # Will be printed later.
@@ -547,7 +546,7 @@ backup()
     #     *  : Something went wrong ! We keep everything in the current state.
     case "${exit_code}" in
         0|23|24)
-            if [ ${dryrun} -gt 0 ]
+            if [ "${dryrun}" -gt 0 ]
             then
                 # Rename the "inProgress" backup :
                 touch -a -m -c -t "${now_t}" -- "${dst}/inProgress"
@@ -561,7 +560,7 @@ backup()
             # Print some information :
             info_backup "${rsync_output}"
 
-            if [ "${exit_code}" = "23" ]
+            if [ "${exit_code}" -eq 23 ]
             then
                 printf "Warning: there might be an ACL issue :\n%s" "${rsync_output}" 1>&2
             fi
@@ -1235,7 +1234,7 @@ remove_backup()
     #     $1 : backup to be removed.
     #
 
-    if [ ${dryrun} -gt 0 ]
+    if [ "${dryrun}" -gt 0 ]
     then
         rm -Rf "${1}"
         printf "Deleted %s.\n" "${1}"
@@ -1262,7 +1261,7 @@ remove_oldest()
     exit_code=0
     nb_backups=$(get_snapshots "${dst}" | wc -l)
 
-    if [ ${nb_backups} -gt 1 ]
+    if [ "${nb_backups}" -gt 1 ]
     then
         oldest=$(get_oldest_snapshot "${dst}")
         remove_backup "${oldest}"
@@ -1289,7 +1288,7 @@ lock()
     mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
     exit_code=$?
 
-    if [ "${exit_code}" = "0" ]
+    if [ "${exit_code}" -eq 0 ]
     then
         echo $$ > "${lockdir}/pid"
     else
@@ -1345,7 +1344,7 @@ handle_sigs()
 
     sig=$?
 
-    if [ ${sig} -gt 127 ]
+    if [ "${sig}" -gt 127 ]
     then
         let sig-=128
         signame="SIG"$(kill -l -- ${sig})
@@ -1467,7 +1466,7 @@ check_root()
 
     exit_code=$(id -u)
 
-    if [ "${exit_code}" != "0" ]
+    if [ "${exit_code}" -ne 0 ]
     then
         printf "%s must be run as root. Aborting.\n" "${APPNAME}" 1>&2
     fi

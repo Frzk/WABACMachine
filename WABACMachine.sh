@@ -767,7 +767,7 @@ date_year_of()
             date --date "${d}" "+%Y"
             ;;
         *)
-            printf -- "FIXME: date_start_of_month isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            printf -- "FIXME: date_year_of isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
             ;;
     esac
 }
@@ -819,7 +819,7 @@ date_start_of_week()
             date --date "${d}" -d "last sunday" "+%F"
             ;;
         *)
-            printf -- "FIXME: date_start_of_previous_week isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            printf -- "FIXME: date_start_of_week isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
             ;;
     esac
 }

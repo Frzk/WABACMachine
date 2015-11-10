@@ -304,7 +304,7 @@ check_exclude_file()
     then
         if [ -f "${exclude_file}" ]     # Readable file ?
         then
-            printf -- "--exclude-from=\"%s\"" "${exclude_file}"
+            printf -- "--exclude-from=%s" "${exclude_file}"
         else
             printf -- "The given exclude file does not exist (%s). Please fix your config file.\n" "${exclude_file}" 1>&2
             exit_code=1

@@ -46,99 +46,140 @@
 
 # # #   FUNCTIONS   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-run()
+main()
 {
     local exit_code
-    local cli_source
-    local cli_destination
-    local action
-    local config
-    local keep_expired
-    local dryrun
+    local excl
 
-    # Config file variables (set when config is loaded) :
-    local source
-    local destination
-    local opts
-    local nb_hours
-    local nb_days
-    local nb_weeks
-    local nb_months
-    local exclude_file
-    local preflight
-    local postflight
-    local rsync_path
-
-    exit_code=0
+    # Loaded from conf file :
+    local source                # What we want to backup.
+    local destination           # Where we want to store the backups.
+    local opts                  # rsync options.
+    local nb_hours              #
+    local nb_days               #
+    local nb_weeks              #
+    local nb_months             #
+    local exclude_file          # rsync exclusion file.
+    local preflight             # pre-flight script.
+    local postflight            # post-flight script.
+    local rsync_path            # Custom rsync path.
 
     # Some defaults values :
-    action="usage"                          # Default action -- Use command line to change the value.
-    config="${APPDIR}/WABACMachine.conf"    # Default config file -- Use the '-c' option to change the value.
-    keep_expired=1                          # Keep expired backups (0=yes, 1=no, default is 1) -- Use the '-k' option to change the value
+    exit_code=0
+    nb_hours="1"
+    nb_days="31"
+    nb_weeks="52"
+    nb_months="24"
+    exclude_file=""
+    preflight=""
+    postflight=""
+    rsync_path=""
+
+    CONFIG="${PROGDIR}/WABACMachine.conf"   # Default config file -- Use the '-c' option to change the value.
 
     # Read arguments.
-    read_args "${@}" || exit $?
+    read_args "${@}" \
+        || exit $?
 
     # Usage ?
-    [ "${action}" = "usage" ] && display_usage
+    [ "${ACTION}" = "usage" ] \
+        && display_usage
 
     # Help ?
-    [ "${action}" = "help" ] && display_help
+    [ "${ACTION}" = "help" ] \
+        && display_help
 
 
     # After this line, we have to be root.
 
     # Check if root.
-    check_root || exit $?
+    check_root \
+        || exit $?
 
     # Setup traps.
     setup_traps
 
     # Load conf.
-    if [ "${action}" != "init" ]
+    if [ "${ACTION}" != "init" ]
     then
-        load_config "${config}"  || exit $?
+        load_config "${CONFIG}" \
+            || exit $?
     fi
 
+    # Do we have an exclude file ? If so, we probably have to modify opts.
+    excl=$(check_exclude_file "${exclude_file}")
+
+    if [ $? -eq 0 ]
+    then
+        if [ ! -z "${excl}" ]
+        then
+            opts+=("${excl}")
+        else
+            exclude_file="None"
+        fi
+    else
+        exit $?
+    fi
+
+
+    # Now we can make all config var readonly :
+    readonly source
+    readonly destination
+    readonly opts
+    readonly nb_hours
+    readonly nb_days
+    readonly nb_weeks
+    readonly nb_months
+    readonly exclude_file
+    readonly preflight
+    readonly postflight
+    readonly rsync_path
+    readonly CONFIG
+
+
     # Run preflight.
-    run_preflight "${preflight}" || exit $?
+    run_preflight "${preflight}" \
+        || exit $?
 
     # Backup, remove expired, output info, init, ...
-    if [ "${action}" = "init" ]
+    if [ "${ACTION}" = "init" ]
     then
-        init "${cli_source}" "${cli_destination}" "${config}"
+        init "${CLI_SOURCE}" "${CLI_DESTINATION}" "${CONFIG}"
         exit_code=$?
     else
         # Dry run.
         contains "--dry-run" "${opts[@]}"
-        dryrun=$?
+        readonly DRYRUN=$?
 
         # Starting...
-        printf "Starting the WABAC Machine"
-        if [ "${dryrun}" -eq 0 ]
+        printf -- "Starting the WABAC Machine"
+        if [ "${DRYRUN}" -eq 0 ]
         then
-            printf " in DRY RUN MODE"
+            printf -- " in DRY RUN MODE"
         fi
-        printf " with:\n  Action: %s\n  Config: %s\n  Source: %s\n  Destination: %s\n" "${action}" "${config}" "${source}" "${destination}"
+        printf -- " with:\n  Action: %s\n  Config: %s\n  Source: %s\n  Destination: %s\n" "${ACTION}" "${CONFIG}" "${source}" "${destination}"
 
         # Check source.
-        check_source "${source}" || exit $?
+        check_source "${source}" \
+            || exit $?
 
         # Check destination.
-        check_destination "${destination}" || exit $?
+        check_destination "${destination}" \
+            || exit $?
 
         # Lock.
-        lock || exit $?
+        lock \
+            || exit $?
 
         # Backup ?
-        if [ "${action}" = "backup" ]
+        if [ "${ACTION}" = "backup" ]
         then
-            backup "${source}" "${destination}" "${opts[*]}"
+            backup "${source}" "${destination}" "${exclude_file}" "${opts[*]}"
             exit_code=$?
         fi
 
         # Remove expired ?
-        if ([ "${action}" = "backup" ] && [ "${exit_code}" -eq 0 ] && [ "${keep_expired}" -ne 0 ]) || [ "${action}" = "remove-expired" ]
+        if ([ "${ACTION}" = "backup" ] && [ "${exit_code}" -eq 0 ] && [ -z "${KEEP_EXPIRED}" ]) || [ "${ACTION}" = "remove-expired" ]
         then
             remove_expired "${destination}" "${nb_hours}" "${nb_days}" "${nb_weeks}" "${nb_months}"
         fi
@@ -162,7 +203,6 @@ run()
 read_args()
 {
     # Reads the arguments
-    #
 
     local exit_code
 
@@ -172,35 +212,35 @@ read_args()
     do
         case "${1}" in
 	        backup|info|remove-expired)
-	            action="${1}"
-	            shift
+                readonly ACTION="${1}"
+                shift
 	            ;;
 
             help)
-                action="help"
+                readonly ACTION="help"
                 break
                 ;;
 
             init)
                 if [ $# -lt 3 ]
                 then
-                    printf "Usage: %s init <source> <destination> [-c | --config <filename>]\n" "${APPNAME}" 1>&2
+                    printf -- "Usage: %s init <source> <destination> [-c | --config <filename>]\n" "${PROGNAME}" 1>&2
                     exit 1
                 else
-                    action="init"
-                    cli_source="${2}"
-                    cli_destination="${3}"
+                    readonly ACTION="init"
+                    readonly CLI_SOURCE="${2}"
+                    readonly CLI_DESTINATION="${3}"
                     shift 3
                 fi
                 ;;
 
             -k|--keep-expired)
-                keep_expired=0
+                readonly KEEP_EXPIRED=1
                 shift
                 ;;
 
 	        -c|--config)
-                config="${2}"
+                CONFIG="${2}"
                 shift 2
                 ;;
 
@@ -210,7 +250,7 @@ read_args()
                 ;;
 
             -*) # Unsupported option
-                printf "Error: Unsupported option (%s).\n" "${1}" 1>&2
+                printf -- "Error: Unsupported option (%s).\n" "${1}" 1>&2
                 exit_code=1
                 break
                 ;;
@@ -231,16 +271,44 @@ load_config()
     # Checks if the config file exists.
     # When no config file has been specified, falls back to the default one.
     # Then, loads it.
-    #
 
     local exit_code
+    local cnf
 
-    source "${1}" 2>/dev/null
+    cnf="${1}"; shift
+
+    source "${cnf}" 2>/dev/null
     exit_code=$?
 
     if [ "${exit_code}" -ne 0 ]
     then
-        printf "Config file (%s) could not be read. Does it exist ?\n" "${1}" 1>&2
+        printf -- "Config file (%s) could not be read. Does it exist ?\n" "${cnf}" 1>&2
+    fi
+
+    return ${exit_code}
+}
+
+
+
+check_exclude_file()
+{
+    # Checks if the provided exclusion file exists and is readable.
+
+    local exit_code
+    local exclude_file
+
+    exit_code=0
+    exclude_file="${1}"; shift
+
+    if [ ! -z "${exclude_file}" ]       # Checks that exclude_file is set AND not empty.
+    then
+        if [ -f "${exclude_file}" ]     # Readable file ?
+        then
+            printf -- "--exclude-from=\"%s\"" "${exclude_file}"
+        else
+            printf -- "The given exclude file does not exist (%s). Please fix your config file.\n" "${exclude_file}" 1>&2
+            exit_code=1
+        fi
     fi
 
     return ${exit_code}
@@ -251,22 +319,23 @@ load_config()
 check_source()
 {
     # Checks if the source is readable.
-    #
 
     local exit_code
+    local src
 
     exit_code=1
+    src="${1}"; shift
 
-    if [ ! -z "${1}" ]
+    if [ ! -z "${src}" ]
     then
-        if [ -r "${1}" ]
+        if [ -r "${src}" ]
         then
             exit_code=0
         else
-            printf "The provided source (%s) is not readable !\n" "${1}" 1>&2
+            printf -- "The provided source (%s) is not readable !\n" "${src}" 1>&2
         fi
     else
-        printf "Source is not defined. Please fix your config file.\n" 1>&2
+        printf -- "Source is not defined. Please fix your config file.\n" 1>&2
     fi
 
     return ${exit_code}
@@ -278,27 +347,28 @@ check_destination()
 {
     # Checks if the destination is explicitly marked as being a destination for the WABAC Machine.
     # Also checks if it is writeable.
-    #
 
     local exit_code
+    local dst
 
     exit_code=1
+    dst="${1}"; shift
 
-    if [ ! -z "${1}" ]
+    if [ ! -z "${dst}" ]
     then
-        if [ -f "${1}/.wabac_machine_is_present" ]
+        if [ -f "${dst}/.wabac_machine_is_present" ]
         then
-            if [ -w "${1}" ]
+            if [ -w "${dst}" ]
             then
                 exit_code=0
             else
-                printf "The provided destination (%s) is not writeable !\n" "${1}" 1>&2
+                printf -- "The provided destination (%s) is not writeable !\n" "${dst}" 1>&2
             fi
         else
-            printf "The provided destination (%s) is not marked as being a destination for the WABAC Machine.\n" "${1}" 1>&2
+            printf -- "The provided destination (%s) is not marked as being a destination for the WABAC Machine.\n" "${dst}" 1>&2
         fi
     else
-        printf "Destination is not defined. Please fix your config file.\n" 1>&2
+        printf -- "Destination is not defined. Please fix your config file.\n" 1>&2
     fi
 
     return ${exit_code}
@@ -311,21 +381,16 @@ init()
     # Initializes a new WABAC Machine :
     #     - Marks the given directory as a destination for the WABAC Machine.
     #     - Creates a new default configuration file with the given source and destination.
-    #
-    #     $1 : source
-    #     $2 : destination
-    #     $3 : path to the config file
-    #
 
     local exit_code
-    local src
-    local dst
-    local cnf
+    local src           # Source
+    local dst           # Destination
+    local cnf           # Config file
 
     exit_code=0
-    src="${1}"
-    dst="${2}"
-    cnf="${3}"
+    src="${1}"; shift
+    dst="${1}"; shift
+    cnf="${1}"; shift
 
     if [ "${exit_code}" -eq 0 ]
     then
@@ -343,11 +408,11 @@ init()
 
             if [ "${exit_code}" -ne 0 ]
             then
-                printf "An error occured while creating the config file (%s). Please check that it is complete and 'chmod 600' it.\n" "${cnf}" 1>&2
+                printf -- "An error occured while creating the config file (%s). Please check that it is complete and 'chmod 600' it.\n" "${cnf}" 1>&2
             fi
         else
             exit_code=1
-            printf "The provided configuration file (%s) already exists. I am NOT going to overwrite it. Please chose another file or remove this one.\n" "${cnf}" 1>&2
+            printf -- "The provided configuration file (%s) already exists. I am NOT going to overwrite it. Please chose another file or remove this one.\n" "${cnf}" 1>&2
         fi
     fi
 
@@ -360,23 +425,23 @@ init()
 
     if [ "${exit_code}" -eq 0 ]
     then
-        printf "The WABAC Machine has been successfully initialized.\n"
+        printf -- "The WABAC Machine has been successfully initialized.\n"
 
-        if [ "${platform}" = "OSX" ]
+        if [ "${PLATFORM}" = "OSX" ]
         then
-            printf "\nCAUTION:\nThe WABAC Machine detected that you are running OSX.\n"
-            printf "If you are backing up data stored on an HFS+ volume, you might need a custom version of rsync.\n"
-            printf "You might also need to enable a few options in your config file (%s).\n" "${cnf}"
-            printf "See instructions here : https://github.com/Frzk/WABACMachine/wiki/Running-on-OSX\n\n"
+            printf -- "\nCAUTION:\nThe WABAC Machine detected that you are running OSX.\n"
+            printf -- "If you are backing up data stored on an HFS+ volume, you might need a custom version of rsync.\n"
+            printf -- "You might also need to enable a few options in your config file (%s).\n" "${cnf}"
+            printf -- "See instructions here : https://github.com/Frzk/WABACMachine/wiki/Running-on-OSX\n\n"
         fi
 
-        if [ "${cnf}" != "{APPDIR}/WABACMachine.conf" ]
+        if [ "${cnf}" != "{PROGDIR}/WABACMachine.conf" ]
         then
-            printf "Run 'WABACMachine.sh backup -c %s' as root to create a new backup.\n" "${cnf}"
+            printf -- "Run 'WABACMachine.sh backup -c %s' as root to create a new backup.\n" "${cnf}"
         else
-            printf "Run 'WABACMachine.sh backup' as root to create a new backup.\n"
+            printf -- "Run 'WABACMachine.sh backup' as root to create a new backup.\n"
         fi
-        printf "Run 'WABACMachine.sh help' to get some help.\n"
+        printf -- "Run 'WABACMachine.sh help' to get some help.\n"
     fi
 
     return ${exit_code}
@@ -387,14 +452,12 @@ init()
 run_preflight()
 {
     # Runs the given script.
-    #     $1 : preflight script.
-    #
 
     local exit_code
-    local script
+    local script        # Pre-flight script
 
     exit_code=0
-    script="${1}"
+    script="${1}"; shift
 
     if [ ! -z "${script}" ]     # Do we have a pre-flight script to run ?
     then
@@ -403,7 +466,7 @@ run_preflight()
             source "${script}"  # Run it !
             exit_code=$?
         else
-            printf "The preflight script (%s) does not exist or cannot be executed. Please fix your config file.\n" "${script}" 1>&2
+            printf -- "The preflight script (%s) does not exist or cannot be executed. Please fix your config file.\n" "${script}" 1>&2
             exit_code=1
         fi
     fi
@@ -416,14 +479,12 @@ run_preflight()
 run_postflight()
 {
     # Runs the given script.
-    #     $1 : postflight script
-    #
 
     local exit_code
-    local script
+    local script        # Post-flight script.
 
     exit_code=0
-    script="${1}"
+    script="${1}"; shift
 
     if [ ! -z "${script}" ]     # Do we have a postflight script to run ?
     then
@@ -432,7 +493,7 @@ run_postflight()
             source "${script}"  # Run it !
             exit_code=$?
         else
-            printf "The postflight script (%s) does not exist or cannot be executed. Please fix your config file.\n" "${script}" 1>&2
+            printf -- "The postflight script (%s) does not exist or cannot be executed. Please fix your config file.\n" "${script}" 1>&2
             exit_code=1
         fi
     fi
@@ -446,50 +507,31 @@ backup()
 {
     # Creates a new backup.
     # It's a basic call to rsync <3
-    #     $1 : source
-    #     $2 : destination (must be ready to use)
-    #     $3 : rsync options
-    #
 
     local exit_code
-    local src
-    local dst
-    local opts
+    local src                   # Source.
+    local dst                   # Destination (must be ready to use).
+    local exclude_file          # Exclude file.
+    local opts                  # rsync options.
     local ref
-    local completed
-    local rsync_cmd
-    local rsync_output
-    local now
-    local now_t
-    local latest
-    local remove_oldest_ok
+    local completed             # 0 if rsync ran successfully. It allows us to restart the backup process when the destination volume is full.
+    local rsync_cmd             # Path to rsync executable.
+    local rsync_output          # rsync output (will be parsed later).
+    local now                   # Now-datetime (directory name format).
+    local now_t                 # Now-datetime (timestamp format).
+    local latest                # Latest successful backup.
+    local remove_oldest_ok      # 0 if we can remove the oldest backup, 1 otherwise.
 
     exit_code=0
-    src="${1}"
-    dst="${2}"
-    shift 2
+    src="${1}"; shift
+    dst="${1}"; shift
+    exclude_file="${1}"; shift
     opts=("${@}")
     completed=1
     now=$(date "+%Y-%m-%d-%H%M%S")
     now_t=$(date "+%Y%m%d%H%M.%S")
 
-
-    # See if we have an exclude file.
-    if [ ! -z "${exclude_file}" ]     # Checks that exclude_file is set AND not empty.
-    then
-    if [ -f "${exclude_file}" ]
-        then
-            opts+=(--exclude-from="${exclude_file}")
-        else
-            # This will be printed to STDERR later :
-            rsync_output=$(printf "The given exclude file does not exist (%s). Please fix your config file.\n" "${exclude_file}")
-            exit_code=1
-        fi
-    else
-        exclude_file="None"
-    fi
-    printf "  Exclude file: %s\n" "${exclude_file}"
-
+    printf -- "  Exclude file: %s\n" "${exclude_file}"
 
     # See if we can take advantage of an existing backup and use the --link-dest option.
     if [ -h "${dst}/latest" ]
@@ -499,44 +541,40 @@ backup()
     else
         ref="None (new backup)"
     fi
-    printf "  Reference: %s\n" "${ref}"
+    printf -- "  Reference: %s\n" "${ref}"
 
 
     # Backup.
-    # The first `if` check prevents from running if the `exclude_file` preference is
-    # set but pointing to an unreadable file.
+
+    # Get rsync path :
+    rsync_cmd=$(get_rsync "${rsync_path}" 2>&1)
+    exit_code=$?
+
     if [ "${exit_code}" -eq 0 ]
     then
-        # Get rsync path :
-        rsync_cmd=$(get_rsync "${rsync_path}" 2>&1)
-        exit_code=$?
+        # Start the backup process.
+        while [ "${completed}" -gt 0 ]
+        do
+            rsync_output=$($rsync_cmd ${opts[@]} -- "${src}" "${dst}/inProgress" 2>&1)
+            exit_code=$?
 
-        if [ "${exit_code}" -eq 0 ]
-        then
-            # Start the backup process.
-            while [ "${completed}" -gt 0 ]
-            do
-                rsync_output=$($rsync_cmd ${opts[@]} -- "${src}" "${dst}/inProgress" 2>&1)
-                exit_code=$?
+            completed=$(grep -c "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}")
 
-                completed=$(grep -c "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}")
+            if [ "${completed}" -gt 0 ]
+            then
+                remove_oldest "${dst}"
+                remove_oldest_ok=$?
 
-                if [ "${completed}" -gt 0 ]
+                if [ "${remove_oldest_ok}" -ne 0 ]
                 then
-                    remove_oldest "${dst}"
-                    remove_oldest_ok=$?
-
-                    if [ "${remove_oldest_ok}" -ne 0 ]
-                    then
-                        completed=0     # Ends the while loop.
-                        rsync_output=$(printf "No more space available on %s.\n" "${dst}")  # Will be printed later.
-                        exit_code=1
-                    fi
+                    completed=0     # Ends the while loop.
+                    rsync_output=$(printf -- "No more space available on %s.\n" "${dst}")  # Will be printed later.
+                    exit_code=1
                 fi
-            done
-        else
-            rsync_output="${rsync_cmd}"
-        fi
+            fi
+        done
+    else
+        rsync_output="${rsync_cmd}"
     fi
 
     # Handle exit codes. We have 4 cases :
@@ -546,7 +584,7 @@ backup()
     #     *  : Something went wrong ! We keep everything in the current state.
     case "${exit_code}" in
         0|23|24)
-            if [ "${dryrun}" -gt 0 ]
+            if [ "${DRYRUN}" -gt 0 ]
             then
                 # Rename the "inProgress" backup :
                 touch -a -m -c -t "${now_t}" -- "${dst}/inProgress"
@@ -562,14 +600,14 @@ backup()
 
             if [ "${exit_code}" -eq 23 ]
             then
-                printf "Warning: there might be an ACL issue :\n%s" "${rsync_output}" 1>&2
+                printf -- "Warning: there might be an ACL issue :\n%s" "${rsync_output}" 1>&2
             fi
 
             exit_code=0     # Reset `exit_code` to zero since we consider the backup as OK.
             ;;
 
         *)
-            printf "Error: An error occured while backing up (%s). The backup might be incomplete or corrupt ! Details :\n%s\n" "${exit_code}" "${rsync_output}" 1>&2
+            printf -- "Error: An error occured while backing up (%s). The backup might be incomplete or corrupt ! Details :\n%s\n" "${exit_code}" "${rsync_output}" 1>&2
             ;;
     esac
 
@@ -580,21 +618,344 @@ backup()
 
 get_snapshots()
 {
-    find "${1}" -maxdepth 1 -type d | grep -E "${date_regexp}" | sort
+    local dst
+
+    dst="${1}"; shift
+
+    find "${dst}" -maxdepth 1 -type d \
+        | grep -E "${DATE_REGEXP}" \
+        | sort
+}
+
+
+
+count_snapshots()
+{
+    local dst
+
+    dst="${1}"; shift
+
+    get_snapshots "${dst}" \
+        | wc -l \
+        | tr -d " "
 }
 
 
 
 get_oldest_snapshot()
 {
-    get_snapshots "${1}" | head -n 1
+    local dst
+
+    dst="${1}"; shift
+
+    get_snapshots "${dst}" \
+        | head -n 1
 }
 
 
 
 get_latest_snapshot()
 {
-    get_snapshots "${1}" | tail -n 1
+    local dst
+
+    dst="${1}"; shift
+
+    get_snapshots "${dst}" \
+        | tail -n 1
+}
+
+
+
+date_latest_snapshot()
+{
+    # Retrieves the date of the latest successful snapshot.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local dst               # Destination (where the snapshots are stored).
+    local latest            # Latest successful snapshot.
+    local tstamp            # Timestamp of the latest successful snapshot.
+
+    dst="${1}"; shift
+    latest=$(get_latest_snapshot "${dst}")
+    tstamp=$(date_timestamp "${latest}")
+
+    date_timestamp_to_hr "${tstamp}"
+}
+
+
+
+date_oldest_snapshot()
+{
+    # Retrieves the date of the latest successful snapshot.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local dst               # Destination (where the snapshots are stored).
+    local oldest            # Oldest successful snapshot.
+    local tstamp            # Timestamp of the latest successful snapshot.
+
+    dst="${1}"; shift
+    oldest=$(get_oldest_snapshot "${dst}")
+    tstamp=$(date_timestamp "${oldest}")
+
+    date_timestamp_to_hr "${tstamp}"
+}
+
+
+
+date_timestamp()
+{
+    # Retrieves the date of creation of the given directory.
+    # Output format is "+%s" (UNIX timestamp).
+
+    local directory         # Directory (should be a snapshot).
+
+    directory="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            stat -f "%m" "${directory}"
+            ;;
+        Linux)
+            stat -c %y "${directory}" \
+                | cut -f 1 -d" "
+            ;;
+        *)
+            printf -- "FIXME: date_timestamp isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_timestamp_to_hr()
+{
+    # Given a timestamp date, returns it in a human readable format (+%F, YYYY-MM-DD).
+
+    local tstamp
+
+    tstamp="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -jf "%s" "${tstamp}" "+%F"
+            ;;
+        Linux)
+            date --date "${tstamp}" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_timestamp_to_hr isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_year_of()
+{
+    # Returns the year of the given date.
+    # Output format is "+%Y" (YYYY).
+
+    local d             # Reference date
+
+    d="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -jf "%F" "${d}" "+%Y"
+            ;;
+        Linux)
+            date --date "${d}" "+%Y"
+            ;;
+        *)
+            printf -- "FIXME: date_start_of_month isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_build()
+{
+    # Build a date.
+
+    local y
+    local m
+    local d
+
+    y="${1}"; shift
+    m="${1}"; shift
+    d="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -jf "%F" "${y}-${m}-${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${y}-${m}-${d}" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_build isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_start_of_week()
+{
+    # Given a date, computes the date of the first day of the week.
+    # Weeks start on Sundays.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+
+    d="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -v-sun -jf "%F" "${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${d}" -d "last sunday" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_start_of_previous_week isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_start_of_month()
+{
+    # Given a date, computes the date of the first day of the month.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+    local cur_month     # Month of the given date.
+    local cur_year      # Year of the given date.
+
+    d="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            cur_month=$(date -jf "%F" "${d}" "+%m")
+            cur_year=$(date -jf "%F" "${d}" "+%Y")
+            date_build "${cur_year}" "${cur_month}" "01"
+            ;;
+        Linux)
+            cur_month=$(date --date "${d}" "+%m")
+            cur_year=$(date --date "${d}" "+%Y")
+            date_build "${cur_year}" "${cur_month}" "01"
+            ;;
+        *)
+            printf -- "FIXME: date_start_of_month isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_add_day()
+{
+    # Returns the given date + nb days.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+    local nb            # Number of days to add. Has to be prepend by '+' or '-'.
+
+    d="${1}"; shift
+    nb="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -v"${nb}"d -jf "%F" "${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${d} ${nb}day" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_add_day isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_add_week()
+{
+    # Returns the given date + nb weeks.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+    local nb            # Number of weeks to add. Has to be prepend by '+' or '-'.
+
+    d="${1}"; shift
+    nb="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -v"${nb}"w -jf "%F" "${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${d} ${nb}week" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_add_week isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_add_month()
+{
+    # Returns the given date + nb months.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+    local nb            # Number of months to add. Has to be prepend by '+' or '-'.
+
+    d="${1}"; shift
+    nb="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -v"${nb}"m -jf "%F" "${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${d} ${nb}month" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_add_month isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
+}
+
+
+
+date_add_year()
+{
+    # Returns the given date + nb years.
+    # Output format is "+%F" (YYYY-MM-DD).
+
+    local d             # Reference date.
+    local nb            # Number of years to add. Has to be prepend by '+' or '-'.
+
+    d="${1}"; shift
+    nb="${1}"; shift
+
+    case "${PLATFORM}" in
+        OSX|BSD)
+            date -v"${nb}"y -jf "%F" "${d}" "+%F"
+            ;;
+        Linux)
+            date --date "${d} ${nb}year" "+%F"
+            ;;
+        *)
+            printf -- "FIXME: date_add_year isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
+            ;;
+    esac
 }
 
 
@@ -603,26 +964,89 @@ info_backup()
 {
     # Prints out some information about the just-ending backup process.
     # Requires rsync to run with the "--stats" and "--human-readable" options.
-    #     $1 : rsync output
-    #
 
+    local rsync_output          # rsync output.
+    local total_nb_files        # Total number of backuped files.
+    local total_size            # Total size of backuped data.
+    local nb_files              # Number of files actually copied during this run.
+    local size                  # Size of data actually copied during this run.
+    local speedup               # rsync speedup.
+
+    rsync_output="${1}"; shift
+
+    total_nb_files=$(parse_total_nb_files "${rsync_output}")
+    total_size=$(parse_total_size "${rsync_output}")
+    nb_files=$(parse_nb_files "${rsync_output}")
+    size=$(parse_size "${rsync_output}")
+    speedup=$(parse_speedup "${rsync_output}")
+
+    printf -- "Successfully backed up %s files (%s).\n" "${total_nb_files}" "${total_size}"
+    printf -- "Actually copied %s files (%s) - Speedup : %s.\n" "${nb_files}" "${size}" "${speedup}"
+}
+
+
+
+parse_total_nb_files()
+{
     local rsync_output
-    local total_nb_files
-    local total_size
-    local nb_files
-    local size
-    local speedup
 
     rsync_output="${1}"
 
-    total_nb_files=$(grep "Number of files:" <<< "${rsync_output}" | cut -d " " -f 4)
-    total_size=$(grep "Total file size:" <<< "${rsync_output}" | cut -d " " -f 4)
-    nb_files=$(grep -E "Number of (regular )?files transferred:" <<< "${rsync_output}" | grep -oE "[^ ]+$")
-    size=$(grep "Total transferred file size:" <<< "${rsync_output}" | cut -d " " -f 5)
-    speedup=$(grep "speedup" <<< "${rsync_output}" | cut -d " " -f 8)
+    grep "Number of files:" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 4
+}
 
-    printf "Successfully backed up %s files (%s).\n" "${total_nb_files}" "${total_size}"
-    printf "Actually copied %s files (%s) - Speedup : %s.\n" "${nb_files}" "${size}" "${speedup}"
+
+
+parse_total_size()
+{
+    local rsync_output
+
+    rsync_output="${1}"
+
+    grep "Total file size:" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 4
+}
+
+
+
+parse_files()
+{
+    local rsync_output
+
+    rsync_output="${1}"
+
+    grep -E "Number of (regular )?files transferred:" \
+        <<< "${rsync_output}" \
+        | grep -oE "[^ ]+$"
+}
+
+
+
+parse_size()
+{
+    local rsync_output
+
+    rsync_output="${1}"
+
+    grep "Total transferred file size:" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 5
+}
+
+
+
+parse_speedup()
+{
+    local rsync_output
+
+    rsync_output="${1}"
+
+    grep "speedup" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 8
 }
 
 
@@ -630,26 +1054,42 @@ info_backup()
 info_destination()
 {
     # Prints out some information about the backups.
-    #     $1 : destination
-    #
 
-    local dst
-    local nb
-    local oldest
-    local latest
-    local space_left
+    local dst                   # Destination.
+    local nb                    # Number of available backups.
+    local oldest                # Name of oldest backup.
+    local latest                # Name of latest backup.
+    local space                 # Amount of space left on destination volume.
 
     dst="${1}"
-    nb=$(get_snapshots "${dst}" | wc -l | tr -d " ")
+    nb=$(count_snapshots "${dst}")
     oldest=$(get_oldest_snapshot "${dst}")
     latest=$(get_latest_snapshot "${dst}")
+    space=$(space_left "${dst}")
 
-    space_left=$(df -PH -- "${dst}" | tail -n 1 | tr -s " " | cut -d " " -f 4)
+    printf -- "%s backups available.\n" "${nb}"
 
-    printf "%s backups available.\n" "${nb}"
-    [ ! -z "${oldest}" ] && printf "Oldest is %s.\n" "${oldest}"
-    [ ! -z "${latest}" ] && printf "Latest is %s.\n" "${latest}"
-    printf "%s left on %s.\n" "${space_left}" "${dst}"
+    [ ! -z "${oldest}" ] \
+        && printf -- "Oldest is %s.\n" "${oldest}"
+
+    [ ! -z "${latest}" ] \
+        && printf -- "Latest is %s.\n" "${latest}"
+
+    printf -- "%s left on %s.\n" "${space}" "${dst}"
+}
+
+
+
+space_left()
+{
+    local dst
+
+    dst="${1}"
+
+    df -PH -- "${dst}" \
+        | tail -n 1 \
+        | tr -s " " \
+        | cut -d " " -f 4
 }
 
 
@@ -657,54 +1097,43 @@ info_destination()
 keep_all()
 {
     # Keeps **everything** for the last $2 hours.
-    #     $1 : path to examine
-    #     $2 : nb hours
-    #
-    # For example, calling `keep_all /my/path 24`
-    # will keep everything within the last 24 hours.
-    #
 
-    local dst
-    local hours
+    local dst                   # Destination.
+    local hours                 # Number of hours.
 
-    dst="${1}"
-    hours=$((${2}*60))
+    dst="${1}"; shift
+    hours=$((${1}*60)); shift
 
-    find "${dst}" -type d -maxdepth 1 -mmin -"${hours}" | grep -E "${date_regexp}" | sort
+    find "${dst}" -type d -maxdepth 1 -mmin -"${hours}" \
+        | grep -E "${DATE_REGEXP}" \
+        | sort
 }
 
 
 
 keep_one_per_day()
 {
-    # Keeps **one** backup per day for the last $2 days.
-    #     $1 : path to examine
-    #     $2 : nb days
-    #
-    # For example, calling `keep_one_per_day /my/path 10`
-    # will keep 1 backup per day for the last 10 days.
-    #
+    # Keeps one backup per day for the last $2 days.
 
-    local dst
-    local days
-    local latest_backup
+    local dst               # Destination.
+    local limit             # Number of days.
+    local d1
+    local d2
+    local i
 
-    dst="${1}"
-    days="${2}"
+    dst="${1}"; shift
+    limit="${1}"; shift
 
-    latest_backup=$(get_latest_snapshot "${dst}")
+    d1=$(date_latest_snapshot "${dst}")
 
-    case "${platform}" in
-        OSX|BSD)
-            osx_keep_one_per_day "${dst}" "${days}" "${latest_backup}"
-            ;;
-        Linux)
-            linux_keep_one_per_day "${dst}" "${days}" "${latest_backup}"
-            ;;
-        *)
-            printf "FIXME: keep_one_per_day isn't supported on this platform (%s).\n" "${platform}" 1>&2
-            ;;
-    esac
+    for ((i=0 ; i<limit ; i++))
+    do
+        d2=$(date_add_day "${d1}" "+1")
+
+        keep_between "${dst}" "${d1}" "${d2}"
+
+        d1=$(date_add_day "${d1}" "-1")
+    done
 }
 
 
@@ -712,33 +1141,28 @@ keep_one_per_day()
 keep_one_per_week()
 {
     # Keeps one backup per week for the last $2 weeks.
-    #     $1 : path to examine
-    #     $2 : nb weeks
-    #
-    # For example, calling `keep_one_per_week /my/path 2`
-    # will keep 1 backup per week for the last 2 weeks.
-    #
 
-    local dst
-    local weeks
-    local latest_backup
+    local dst               # Destination.
+    local limit             # Number of weeks.
+    local latest
+    local d1
+    local d2
+    local i
 
-    dst="${1}"
-    weeks="${2}"
+    dst="${1}"; shift
+    limit="${1}"; shift
 
-    latest_backup=$(get_latest_snapshot "${dst}")
+    latest=$(date_latest_snapshot "${dst}")
+    d1=$(date_start_of_week "${latest}")
 
-    case "${platform}" in
-        OSX|BSD)
-            osx_keep_one_per_week "${dst}" "${weeks}" "${latest_backup}"
-            ;;
-        Linux)
-            linux_keep_one_per_week "${dst}" "${weeks}" "${latest_backup}"
-            ;;
-        *)
-            printf "FIXME: keep_one_per_week isn't supported on this platform (%s).\n" "${platform}" 1>&2
-            ;;
-    esac
+    for ((i=0 ; i<limit ; i++))
+    do
+        d2=$(date_add_week "${d1}" "+1")
+
+        keep_between "${dst}" "${d1}" "${d2}"
+
+        d1=$(date_add_week "${d1}" "-1")
+    done
 }
 
 
@@ -746,33 +1170,28 @@ keep_one_per_week()
 keep_one_per_month()
 {
     # Keeps one backup per month for the last $2 months.
-    #     $1 : path to examine
-    #     $2 : nb months
-    #
-    # For example, calling `keep_one_per_month /my/path 10`
-    # will keep 1 backup per month for the last 10 months.
-    #
 
-    local dst
-    local months
-    local latest_backup
+    local dst               # Destination.
+    local limit             # Number of months.
+    local latest
+    local d1
+    local d2
+    local i
 
-    dst="${1}"
-    months="${2}"
+    dst="${1}"; shift
+    limit="${1}"; shift
 
-    latest_backup=$(get_latest_snapshot "${dst}")
+    latest=$(date_latest_snapshot "${dst}")
+    d1=$(date_start_of_month "${latest}")
 
-    case "${platform}" in
-        OSX|BSD)
-            osx_keep_one_per_month "${dst}" "${months}" "${latest_backup}"
-            ;;
-        Linux)
-            linux_keep_one_per_month "${dst}" "${months}" "${latest_backup}"
-            ;;
-        *)
-            printf "FIXME: keep_one_per_month isn't supported on this platform (%s).\n" "${platform}" 1>&2
-            ;;
-    esac
+    for ((i=0 ; i<limit ; i++))
+    do
+        d2=$(date_add_month "${d1}" "+1")
+
+        keep_between "${dst}" "${d1}" "${d2}"
+
+        d1=$(date_add_month "${d1}" "-1")
+    done
 }
 
 
@@ -780,360 +1199,48 @@ keep_one_per_month()
 keep_one_per_year()
 {
     # Keeps one backup per year, without limit.
-    #     $1 : path to examine
-    #
-    # For example, calling `keep_one_per_year /my/path`
-    # will keep 1 backup per year, without limit of time.
-    #
 
     local dst
-    local oldest_backup
+    local oldest
+    local first_year
+    local now_year
+    local d1
+    local d2
+    local i
 
-    dst="${1}"
+    dst="${1}"; shift
+    oldest=$(date_oldest_snapshot "${dst}")
 
-    oldest_backup=$(get_oldest_snapshot "${dst}")
+    first_year=$(date_year_of "${oldest}")
+    now_year=$(date_year_of "$(date "+%F")")
 
-    case "${platform}" in
-        OSX|BSD)
-            osx_keep_one_per_year "${dst}" "${oldest_backup}"
-            ;;
-        Linux)
-            linux_keep_one_per_year "${dst}" "${oldest_backup}"
-            ;;
-        *)
-            printf "FIXME: keep_one_per_year isn't supported on this platform (%s).\n" "${platform}" 1>&2
-            ;;
-    esac
+    for ((i=first_year ; i<now_year ; i++))
+    do
+        d1=$(date_build "${i}" "01" "01")
+        d2=$(date_add_year "${d1}" "+1")
+
+        keep_between "${dst}" "${d1}" "${d2}"
+    done
 }
 
 
 
 keep_between()
 {
-    # Keeps one backup betwen the two given dates.
-    #     $1 : path to examine
-    #     $2 : first date (oldest)
-    #     $3 : second date (latest)
-    #
-
-    local dst
-    local d1
-    local d2
-
-    dst="${1}"
-    d1="${2}"
-    d2="${3}"
-
-    # Keeps one snapshot for the interval [$D1 ; $D2[
-    find "${dst}" -type d -maxdepth 1 \( -newermt "${d1}" -a ! -newermt "${d2}" \) | grep -E "${date_regexp}" | sort | tail -n 1
-}
-
-
-
-osx_keep_one_per_day()
-{
-    # OSX version of `keep_one_per_day`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb days
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local d1
-    local d2
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -f "%m" "${latest_backup}")
-    date_ref=$(date -jf "%s" "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        d1="${date_ref}"
-        d2=$(date -v+1d -jf "%F" "${d1}" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref=$(date -v-1d -jf "%F" "${d1}" "+%F")
-    done
-}
-
-
-
-osx_keep_one_per_week()
-{
-    # OSX version of `keep_one_per_week`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb weeks
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local d1
-    local d2
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -f "%m" "${latest_backup}")
-    date_ref=$(date -jf "%s" "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        d1=$(date -v-sun -jf "%F" "${date_ref}" "+%F")  # Previous Sunday
-        d2=$(date -v+1w -v+sun -jf "%F" "${d1}" "+%F")  # Next Sunday
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref=$(date -v-7d -jf "%F" "${d1}" "+%F")
-    done
-}
-
-
-
-osx_keep_one_per_month()
-{
-    # OSX version of `keep_one_per_month`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb months
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local cur_month
-    local cur_year
-    local d1
-    local d2
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -f "%m" "${latest_backup}")
-    date_ref=$(date -jf "%s" "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        cur_month=$(date -jf "%F" "${date_ref}" "+%m")
-        cur_year=$(date -jf "%F" "${date_ref}" "+%Y")
-
-        d1=$(date -jf "%F" "${cur_year}-${cur_month}-01" "+%F")
-        d2=$(date -v+1m -jf "%F" "${d1}" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref=$(date -v-1m -jf "%F" "${d1}" "+%F")
-    done
-}
-
-
-
-osx_keep_one_per_year()
-{
-    # OSX version of `keep_one_per_year`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : oldest backup
-    #
-
-    local dst
-    local oldest_backup
-    local tstamp
-    local date_ref
-    local first_year
-    local latest_year
-    local d1
-    local d2
-
-    dst="${1}"
-    oldest_backup="${2}"
-
-    tstamp=$(stat -f "%m" "${oldest_backup}")
-    date_ref=$(date -jf "%s" "${tstamp}" "+%F")
-
-    first_year=$(date -jf "%F" "${date_ref}" "+%Y")
-    latest_year=$(( ($(date "+%Y")) + 1 ))
-
-    for ((i=first_year ; i<latest_year ; i++))
-    do
-        d1=$(date -jf "%F" "${i}-01-01" "+%F")
-        d2=$(date -v+1y -jf "%F" "${d1}" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-    done
-}
-
-
-
-linux_keep_one_per_day()
-{
-    # Linux version of `keep_one_per_day`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb days
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local d1
-    local d2
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -c %y "${latest_backup}" | cut -f 1 -d" ")
-    date_ref=$(date --date "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        d1="${date_ref}"
-        d2=$(date --date "${d1} +1day" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref=$(date --date "${d1} -1day" "+%F")
-    done
-}
-
-
-
-linux_keep_one_per_week()
-{
-    # Linux version of `keep_one_per_week`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb weeks
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local d1
-    local d2
-    local n
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -c %y "${latest_backup}" | cut -f 1 -d" ")
-    date_ref=$(date --date "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        n=$(date -d "${date_ref}" +%u)
-        d1=$(date --date "${date_ref} -${n} days" "+%F")  # Previous Sunday
-        d2=$(date --date "${d1} +1week" "+%F")            # Next Sunday
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref="${d1}"
-    done
-}
-
-
-
-linux_keep_one_per_month()
-{
-    # Linux version of `keep_one_per_month`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : nb months
-    #     $3 : latest backup
-    #
-
-    local dst
-    local limit
-    local latest_backup
-    local tstamp
-    local date_ref
-    local cur_month
-    local cur_year
-    local d1
-    local d2
-
-    dst="${1}"
-    limit="${2}"
-    latest_backup="${3}"
-
-    tstamp=$(stat -c %y "${latest_backup}" | cut -f 1 -d" ")
-    date_ref=$(date --date "${tstamp}" "+%F")
-
-    for ((i=0 ; i<limit ; i++ ))
-    do
-        cur_month=$(date --date "${date_ref}" "+%m")
-        cur_year=$(date --date "${date_ref}" "+%Y")
-
-        d1=$(date --date "${cur_year}-${cur_month}-01" "+%F")
-        d2=$(date --date "${d1} +1month" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-
-        date_ref=$(date --date "${d1} -1month" "+%F")
-    done
-}
-
-
-
-linux_keep_one_per_year()
-{
-    # Linux version of `keep_one_per_year`.
-    # `date` invokations are different.
-    #     $1 : destination
-    #     $2 : oldest backup
-    #
-
-    local dst
-    local oldest_backup
-    local tstamp
-    local date_ref
-    local first_year
-    local latest_year
-    local d1
-    local d2
-
-    dst="${1}"
-    oldest_backup="${2}"
-
-    tstamp=$(stat -c %y "${oldest_backup}" | cut -f 1 -d" ")
-    date_ref=$(date --date "${tstamp}" "+%F")
-
-    first_year=$(date --date "${date_ref}" "+%Y")
-    latest_year=$(date --date "now +1year" "+%Y")
-
-    for ((i=first_year ; i<latest_year ; i++))
-    do
-        d1=$(date --date "${i}-01-01" "+%F")
-        d2=$(date --date "${d1} +1year" "+%F")
-
-        keep_between "${dst}" "${d1}" "${d2}"
-    done
+    # Keeps one backup betwen the two given dates (interval [$1 ; $2[)
+
+    local dst       # Destination.
+    local d1        # Oldest date of the considered dates interval.
+    local d2        # Latest date of the considered dates interval.
+
+    dst="${1}"; shift
+    d1="${1}"; shift
+    d2="${1}"; shift
+
+    find "${dst}" -type d -maxdepth 1 \( -newermt "${d1}" -a ! -newermt "${d2}" \) \
+        | grep -E "${DATE_REGEXP}" \
+        | sort \
+        | tail -n 1
 }
 
 
@@ -1141,27 +1248,20 @@ linux_keep_one_per_year()
 remove_expired()
 {
     # Removes expired backups.
-    #     $1 : destination (where the backups are stored)
-    #     $2 : nb hours
-    #     $3 : nb days
-    #     $4 : nb weeks
-    #     $5 : nb months
-    #
 
-    local dst
-    local nb_hours
-    local nb_days
-    local nb_weeks
-    local nb_months
-    local keep_file
+    local dst                       # Destination.
+    local nb_hours                  # Number of hours.
+    local nb_days                   # Number of days.
+    local nb_weeks                  # Number of weeks.
+    local nb_months                 # Number of months.
+    local keep_file                 # File that lists snapshots to keep.
 
-    dst="${1}"
-    nb_hours="${2}"
-    nb_days="${3}"
-    nb_weeks="${4}"
-    nb_months="${5}"
-
-    keep_file="${APPDIR}/wabac.running/keep"
+    dst="${1}"; shift
+    nb_hours="${1}"; shift
+    nb_days="${1}"; shift
+    nb_weeks="${1}"; shift
+    nb_months="${1}"; shift
+    keep_file="${PROGDIR}/wabac.running/keep"
 
     {
         keep_all "${dst}" "${nb_hours}"
@@ -1179,43 +1279,45 @@ remove_expired()
 remove_useless()
 {
     # Removes useless backups (those that are **NOT** listed in the given `keep_file`).
-    #     $1 : path to where the backups are stored
-    #     $2 : keep file, file that lists the backups to **KEEP**.
-    #
 
-    local dst
-    local keep_file
-    local rm_count
-    local readonly snapshots_file="${APPDIR}/wabac.running/backups"
-    local readonly kickout="${APPDIR}/wabac.running/kickout"
+    local dst                       # Destination.
+    local keep_file                 # File that lists snapshots **TO KEEP**.
+    local snapshots_file            # File that lists all existing snapshots.
+    local kickout                   # File that lists snapshots to delete.
+    local rm_count                  # Number of snapshots to delete.
 
+    dst="${1}"; shift
+    keep_file="${1}"; shift
 
-    dst="${1}"
-    keep_file="${2}"
+    snapshots_file="${PROGDIR}/wabac.running/backups"
+    kickout="${PROGDIR}/wabac.running/kickout"
 
     # Builds the list of backups to remove :
     #   Sorts the two files, merges them and removes duplicates.
     #   See `man sort` for further details.
     #   See `man uniq` for further details.
-    get_snapshots "${dst}" > "${snapshots_file}"
-    sort -- "${keep_file}" "${snapshots_file}" | uniq -u > "${kickout}"
+    get_snapshots "${dst}" \
+        > "${snapshots_file}"
+
+    sort -- "${keep_file}" "${snapshots_file}" \
+        | uniq -u > "${kickout}"
 
     # Removes what's useless :
     rm_count=$(wc -l < "${kickout}" | tr -d " ")
 
     case "${rm_count}" in
         0)
-            printf "%s expired backup found.\n" "No"
+            printf -- "%s expired backup found.\n" "No"
             ;;
         1)
-            printf "%s expired backup will be removed.\n" "One"
+            printf -- "%s expired backup will be removed.\n" "One"
             ;;
         *)
-            printf "%s expired backups will be removed.\n" "${rm_count}"
+            printf -- "%s expired backups will be removed.\n" "${rm_count}"
             ;;
     esac
 
-    while read snap
+    while read -r snap
     do
         remove_backup "${snap}"
     done < "${kickout}"
@@ -1231,18 +1333,18 @@ remove_useless()
 remove_backup()
 {
     # Removes the given backup.
-    #     $1 : backup to be removed.
-    #
 
-    if [ "${dryrun}" -gt 0 ]
+    local bck           # Backup to delete.
+
+    bck="${1}"
+
+    if [ "${DRYRUN}" -gt 0 ]
     then
-        rm -Rf "${1}"
-        printf "Deleted %s.\n" "${1}"
+        rm -Rf "${bck}"
+        printf -- "Deleted %s.\n" "${bck}"
     else
-        printf "I would have deleted %s.\n" "${1}"
+        printf -- "I would have deleted %s.\n" "${bck}"
     fi
-
-
 }
 
 
@@ -1250,23 +1352,22 @@ remove_backup()
 remove_oldest()
 {
     # Removes the oldest backup, only if it's not the only one remaining.
-    #     $1 : destination (where the backups are stored)
 
-    local dst
     local exit_code
+    local dst               # Destination
     local nb_backups
     local oldest
 
-    dst="${1}"
+    dst="${1}"; shift
     exit_code=0
-    nb_backups=$(get_snapshots "${dst}" | wc -l)
+    nb_backups=$(count_snapshots "${dst}")
 
     if [ "${nb_backups}" -gt 1 ]
     then
         oldest=$(get_oldest_snapshot "${dst}")
         remove_backup "${oldest}"
     else
-        printf "Can't remove the oldest backup : it's the last one remaining.\n" 1>&2
+        printf -- "Can't remove the oldest backup : it's the last one remaining.\n" 1>&2
         exit_code=1
     fi
 
@@ -1279,12 +1380,12 @@ lock()
 {
     # Creates a lock to ensure we run only one instance at the same time.
     # We use mkdir because it is atomic.
-    #
 
     local exit_code
     local mkdir_output
-    local readonly lockdir="${APPDIR}/wabac.running"
+    local lockdir
 
+    lockdir="${PROGDIR}/wabac.running"
     mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
     exit_code=$?
 
@@ -1292,7 +1393,7 @@ lock()
     then
         echo $$ > "${lockdir}/pid"
     else
-        printf "Could not acquire lock : %s (probably hold by %s).\n" "${mkdir_output}" "$(<${lockdir}/pid)"
+        printf -- "Could not acquire lock : %s (probably hold by %s).\n" "${mkdir_output}" "$(<"${lockdir}"/pid)"
     fi
 
     return ${exit_code}
@@ -1304,9 +1405,10 @@ unlock()
 {
     # Allows another instance of the WABAC Machine to run.
     # As we store every temp file in the lockdir directory, it also deletes those.
-    #
 
-    local readonly lockdir="${APPDIR}/wabac.running"
+    local lockdir
+
+    lockdir="${PROGDIR}/wabac.running"
     rm -Rf "${lockdir}"
 }
 
@@ -1316,7 +1418,6 @@ setup_traps()
 {
     # Setup traps.
     #   The following signals are trapped : EXIT, TERM, HUP, QUIT and INT.
-    #
 
     trap "handle_exit" EXIT
     trap "handle_sigs" TERM HUP QUIT INT
@@ -1327,7 +1428,6 @@ setup_traps()
 remove_traps()
 {
     # Remove previously setup traps.
-    #
 
     trap - TERM HUP QUIT INT EXIT
 }
@@ -1337,7 +1437,6 @@ remove_traps()
 handle_sigs()
 {
     # Handle trapped signals.
-    #
 
     local sig
     local signame
@@ -1352,7 +1451,7 @@ handle_sigs()
         signame="RSYNC_INTERRUPTED"
     fi
 
-    printf "Received %s. Backup interrupted !\n" "${signame}" 1>&2
+    printf -- "Received %s. Backup interrupted !\n" "${signame}" 1>&2
 
     # Propagate :
     kill -s ${sig} $$
@@ -1363,7 +1462,6 @@ handle_sigs()
 handle_exit()
 {
     # This is the exit door of the WABAC Machine.
-    #
 
     errno=$?
 
@@ -1379,16 +1477,15 @@ get_rsync()
     local rsync_cmd
 
     exit_code=0
-    rsync_cmd=""
+    rsync_cmd="${1}"; shift
 
-    if [ ! -z "${1}" ]      # A path is specified in the config file.
+    if [ ! -z "${rsync_cmd}" ]      # A path is specified in the config file.
     then
-        if [ ! -f "${1}" ] || [ ! -x "${1}" ]
+        if [ ! -f "${rsync_cmd}" ] || [ ! -x "${rsync_cmd}" ]
         then
-            printf "Could not find a suitable rsync executable at the provided path (%s).\n" "${1}" 1>&2
+            printf -- "Could not find a suitable rsync executable at the provided path (%s).\n" "${rsync_cmd}" 1>&2
+            rsync_cmd=""
             exit_code=2
-        else
-            rsync_cmd="${1}"
         fi
     else                    # Let's try the "standards" paths.
         if [ -f "/usr/bin/rsync" ] && [ -x "/usr/bin/rsync" ]
@@ -1398,12 +1495,12 @@ get_rsync()
         then
             rsync_cmd="/usr/local/bin/rsync"
         else
-            printf "Could not find a suitable rsync executable. Please make sure rsync is installed. If you use a custom version, please specify it in your config file.\n" 1>&2
+            printf -- "Could not find a suitable rsync executable. Please make sure rsync is installed. If you use a custom version, please specify it in your config file.\n" 1>&2
             exit_code=1
         fi
     fi
 
-    printf "%s\n" "${rsync_cmd}"
+    printf -- "%s\n" "${rsync_cmd}"
 
     return ${exit_code}
 }
@@ -1414,19 +1511,19 @@ getOSFamily()
 {
     case "${OSTYPE}" in
         darwin*)
-            printf "%s\n" "OSX"
+            printf -- "%s\n" "OSX"
             ;;
         linux*)
-            printf "%s\n" "Linux"
+            printf -- "%s\n" "Linux"
             ;;
         solaris*)
-            printf "%s\n" "Solaris"
+            printf -- "%s\n" "Solaris"
             ;;
         bsd*)
-            printf "%s\n" "BSD"
+            printf -- "%s\n" "BSD"
             ;;
         *)
-            printf "Unknown: %s\n" "${OSTYPE}"
+            printf -- "Unknown: %s\n" "${OSTYPE}"
             ;;
     esac
 }
@@ -1437,16 +1534,15 @@ contains()
 {
     # Checks if the first argument is in the following ones.
     # This is especially useful to check if an array contains a specific value.
-    #
 
     local exit_code
     local needle
     local haystack
 
     exit_code=1
-    needle=${1}
+    needle="${1}"; shift
 
-    for haystack in "${@:2}"
+    for haystack in "${@:1}"
     do
         if [ "${needle}" = "${haystack}" ]
         then
@@ -1468,7 +1564,7 @@ check_root()
 
     if [ "${exit_code}" -ne 0 ]
     then
-        printf "%s must be run as root. Aborting.\n" "${APPNAME}" 1>&2
+        printf -- "%s must be run as root. Aborting.\n" "${PROGNAME}" 1>&2
     fi
 
     return "${exit_code}"
@@ -1478,7 +1574,11 @@ check_root()
 
 create_conf()
 {
-    cat << EO_DEFAULT_CONFIG > "${1}"
+    local cnf
+
+    cnf="${1}"
+
+    cat << EO_DEFAULT_CONFIG > "${cnf}"
 # The WABAC Machine configuration.
 
 # Source :
@@ -1566,8 +1666,8 @@ EO_DEFAULT_CONFIG
 display_usage()
 {
     cat <<EOH
-Usage: $APPNAME <verb> <options>
-Try '$APPNAME help' for more information.
+Usage: $PROGNAME <verb> <options>
+Try '$PROGNAME help' for more information.
 EOH
 
     exit 0
@@ -1583,7 +1683,7 @@ The WABAC Machine is a wrapper for rsync that will help you backup your files.
 Options and functionnalities mostly depend on your platform. Please refer to the
 avalaible online documentation for further information.
 
-Usage: $APPNAME <verb> <options>, where <verb> is as follows:
+Usage: $PROGNAME <verb> <options>, where <verb> is as follows:
 
     backup                              Create a new backup of source in destination.
     help                                Show help (this output).
@@ -1615,20 +1715,22 @@ EOH
 
 # # #   RUN   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-# Appname and version :
-readonly APPNAME=$(basename "${0}")
-readonly APPDIR=$(cd "$(dirname "$0")"; pwd)    # Rather ugly but, well...
-readonly VERSION="20150619"
+# PROGNAME and version :
+readonly PROGNAME=$(basename "${0}")
+readonly PROGDIR=$(cd "$(dirname "$0")" || exit 1; pwd)    # Rather ugly but, well...
+readonly VERSION="20151110"
 
 # Date format :
-readonly date_regexp="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-readonly date_fmt="%F-%H%M%S"
+readonly DATE_REGEXP="[0-9]{4}-[0-9]{2}-[0-9]{2}"
 
 # Get the platform :
-readonly platform=$(getOSFamily)
+readonly PLATFORM=$(getOSFamily)
+
+# Arguments ;
+readonly -a ARGS=("${@}")
 
 # Run :
-run "${@}"
+main "${ARGS[@]}"
 
 # This should never be reached :
 exit 0

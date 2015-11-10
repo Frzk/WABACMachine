@@ -1104,7 +1104,7 @@ keep_all()
     dst="${1}"; shift
     hours=$((${1}*60)); shift
 
-    find "${dst}" -type d -maxdepth 1 -mmin -"${hours}" \
+    find "${dst}" -maxdepth 1 -type d -mmin -"${hours}" \
         | grep -E "${DATE_REGEXP}" \
         | sort
 }
@@ -1237,7 +1237,7 @@ keep_between()
     d1="${1}"; shift
     d2="${1}"; shift
 
-    find "${dst}" -type d -maxdepth 1 \( -newermt "${d1}" -a ! -newermt "${d2}" \) \
+    find "${dst}" -maxdepth 1 -type d \( -newermt "${d1}" -a ! -newermt "${d2}" \) \
         | grep -E "${DATE_REGEXP}" \
         | sort \
         | tail -n 1

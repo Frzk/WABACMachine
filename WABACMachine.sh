@@ -1012,7 +1012,7 @@ parse_total_size()
 
 
 
-parse_files()
+parse_nb_files()
 {
     local rsync_output
 

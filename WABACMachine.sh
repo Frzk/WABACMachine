@@ -5,7 +5,7 @@
 # This script creates incremental backups with a smart retention strategy.
 # It's obviously inspired by Apple's Time Machine.
 # All credits to rsync devs.
-# Copyright François KUBLER, 2009-2015.
+# Copyright François KUBLER, 2009-2021.
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -107,11 +107,9 @@ main()
     fi
 
     # Do we have an exclude file ? If so, we probably have to modify opts.
-    excl=$(check_exclude_file "${exclude_file}")
-
-    if [ $? -eq 0 ]
+    if excl=$(check_exclude_file "${exclude_file}")
     then
-        if [ ! -z "${excl}" ]
+        if [ -n "${excl}" ]
         then
             opts+=("${excl}")
         else
@@ -179,7 +177,7 @@ main()
         fi
 
         # Remove expired ?
-        if ([ "${ACTION}" = "backup" ] && [ "${exit_code}" -eq 0 ] && [ -z "${KEEP_EXPIRED}" ]) || [ "${ACTION}" = "remove-expired" ]
+        if { [ "${ACTION}" = "backup" ] && [ "${exit_code}" -eq 0 ] && [ -z "${KEEP_EXPIRED}" ]; } || [ "${ACTION}" = "remove-expired" ]
         then
             remove_expired "${destination}" "${nb_hours}" "${nb_days}" "${nb_weeks}" "${nb_months}"
         fi
@@ -204,17 +202,15 @@ read_args()
 {
     # Reads the arguments
 
-    local exit_code
-
-    exit_code=0
+    local exit_code=0
 
     while :
     do
         case "${1}" in
-	        backup|info|remove-expired)
+            backup|info|remove-expired)
                 readonly ACTION="${1}"
                 shift
-	            ;;
+                ;;
 
             help)
                 readonly ACTION="help"
@@ -239,7 +235,7 @@ read_args()
                 shift
                 ;;
 
-	        -c|--config)
+            -c|--config)
                 CONFIG="${2}"
                 shift 2
                 ;;
@@ -272,13 +268,11 @@ load_config()
     # When no config file has been specified, falls back to the default one.
     # Then, loads it.
 
-    local exit_code
-    local cnf
+    local -r cnf="${1}"; shift
 
-    cnf="${1}"; shift
-
+    # shellcheck source=/dev/null
     source "${cnf}" 2>/dev/null
-    exit_code=$?
+    local -r exit_code=$?
 
     if [ "${exit_code}" -ne 0 ]
     then
@@ -294,13 +288,10 @@ check_exclude_file()
 {
     # Checks if the provided exclusion file exists and is readable.
 
-    local exit_code
-    local exclude_file
+    local exit_code=0
+    local -r exclude_file="${1}"; shift
 
-    exit_code=0
-    exclude_file="${1}"; shift
-
-    if [ ! -z "${exclude_file}" ]       # Checks that exclude_file is set AND not empty.
+    if [ -n "${exclude_file}" ]     # Checks that exclude_file is set AND not empty.
     then
         if [ -f "${exclude_file}" ]     # Readable file ?
         then
@@ -320,13 +311,10 @@ check_source()
 {
     # Checks if the source is readable.
 
-    local exit_code
-    local src
+    local exit_code=1
+    local -r src="${1}"; shift
 
-    exit_code=1
-    src="${1}"; shift
-
-    if [ ! -z "${src}" ]
+    if [ -n "${src}" ]
     then
         if [ -r "${src}" ]
         then
@@ -348,13 +336,10 @@ check_destination()
     # Checks if the destination is explicitly marked as being a destination for the WABAC Machine.
     # Also checks if it is writeable.
 
-    local exit_code
-    local dst
+    local exit_code=1
+    local -r dst="${1}"; shift
 
-    exit_code=1
-    dst="${1}"; shift
-
-    if [ ! -z "${dst}" ]
+    if [ -n "${dst}" ]
     then
         if [ -f "${dst}/.wabac_machine_is_present" ]
         then
@@ -382,15 +367,10 @@ init()
     #     - Marks the given directory as a destination for the WABAC Machine.
     #     - Creates a new default configuration file with the given source and destination.
 
-    local exit_code
-    local src           # Source
-    local dst           # Destination
-    local cnf           # Config file
-
-    exit_code=0
-    src="${1}"; shift
-    dst="${1}"; shift
-    cnf="${1}"; shift
+    local exit_code=0
+    local -r src="${1}"; shift
+    local -r dst="${1}"; shift
+    local -r cnf="${1}"; shift
 
     if [ "${exit_code}" -eq 0 ]
     then
@@ -453,16 +433,14 @@ run_preflight()
 {
     # Runs the given script.
 
-    local exit_code
-    local script        # Pre-flight script
+    local exit_code=0
+    local -r script="${1}"; shift
 
-    exit_code=0
-    script="${1}"; shift
-
-    if [ ! -z "${script}" ]     # Do we have a pre-flight script to run ?
+    if [ -n "${script}" ]       # Do we have a pre-flight script to run ?
     then
         if [ -x "${script}" ]   # Is it executable ?
         then
+            # shellcheck source=/dev/null
             source "${script}"  # Run it !
             exit_code=$?
         else
@@ -480,16 +458,14 @@ run_postflight()
 {
     # Runs the given script.
 
-    local exit_code
-    local script        # Post-flight script.
+    local exit_code=0
+    local -r script="${1}"; shift
 
-    exit_code=0
-    script="${1}"; shift
-
-    if [ ! -z "${script}" ]     # Do we have a postflight script to run ?
+    if [ -n "${script}" ]       # Do we have a postflight script to run ?
     then
         if [ -x "${script}" ]   # Is it executable ?
         then
+            # shellcheck source=/dev/null
             source "${script}"  # Run it !
             exit_code=$?
         else
@@ -508,28 +484,31 @@ backup()
     # Creates a new backup.
     # It's a basic call to rsync <3
 
-    local exit_code
-    local src                   # Source.
-    local dst                   # Destination (must be ready to use).
-    local exclude_file          # Exclude file.
-    local opts                  # rsync options.
-    local ref
-    local completed             # 0 if rsync ran successfully. It allows us to restart the backup process when the destination volume is full.
-    local rsync_cmd             # Path to rsync executable.
-    local rsync_output          # rsync output (will be parsed later).
-    local now                   # Now-datetime (directory name format).
-    local now_t                 # Now-datetime (timestamp format).
-    local latest                # Latest successful backup.
-    local remove_oldest_ok      # 0 if we can remove the oldest backup, 1 otherwise.
+    local exit_code=0
 
-    exit_code=0
-    src="${1}"; shift
-    dst="${1}"; shift
-    exclude_file="${1}"; shift
-    opts=("${@}")
-    completed=1
-    now=$(date "+%Y-%m-%d-%H%M%S")
-    now_t=$(date "+%Y%m%d%H%M.%S")
+    # Source:
+    local -r src="${1}"; shift
+    # Destination:
+    local -r dst="${1}"; shift
+    # Exclude file:
+    local -r exclude_file="${1}"; shift
+    # Now-datetime:
+    local -r now=$(date "+%Y-%m-%d-%H%M%S")
+    # Now-datetime (timestamp format)
+    local -r now_t=$(date "+%Y%m%d%H%M.%S")
+
+    # rsync options:
+    local opts=("${@}")
+    # Reference backup:
+    local ref
+    # 0 if rsync ran successfully, allows us to restart the backup process when destination volume is full:
+    local completed=1
+    # Path to rsync binary
+    local rsync_cmd
+    # rsync output (will be parsed later):
+    local rsync_output
+    # Latest successful backup:
+    local latest
 
     printf -- "  Exclude file: %s\n" "${exclude_file}"
 
@@ -555,17 +534,14 @@ backup()
         # Start the backup process.
         while [ "${completed}" -gt 0 ]
         do
-            rsync_output=$($rsync_cmd ${opts[@]} -- "${src}" "${dst}/inProgress" 2>&1)
+            rsync_output=$($rsync_cmd "${opts[@]}" -- "${src}" "${dst}/inProgress" 2>&1)
             exit_code=$?
 
             completed=$(grep -c "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}")
 
             if [ "${completed}" -gt 0 ]
             then
-                remove_oldest "${dst}"
-                remove_oldest_ok=$?
-
-                if [ "${remove_oldest_ok}" -ne 0 ]
+                if ! remove_oldest "${dst}"
                 then
                     completed=0     # Ends the while loop.
                     rsync_output=$(printf -- "No more space available on %s.\n" "${dst}")  # Will be printed later.
@@ -618,9 +594,7 @@ backup()
 
 get_snapshots()
 {
-    local dst
-
-    dst="${1}"; shift
+    local -r dst="${1}"; shift
 
     find "${dst}" -maxdepth 1 -type d \
         | grep -E "${DATE_REGEXP}" \
@@ -631,9 +605,7 @@ get_snapshots()
 
 count_snapshots()
 {
-    local dst
-
-    dst="${1}"; shift
+    local -r dst="${1}"; shift
 
     get_snapshots "${dst}" \
         | wc -l \
@@ -644,9 +616,7 @@ count_snapshots()
 
 get_oldest_snapshot()
 {
-    local dst
-
-    dst="${1}"; shift
+    local -r dst="${1}"; shift
 
     get_snapshots "${dst}" \
         | head -n 1
@@ -656,9 +626,7 @@ get_oldest_snapshot()
 
 get_latest_snapshot()
 {
-    local dst
-
-    dst="${1}"; shift
+    local -r dst="${1}"; shift
 
     get_snapshots "${dst}" \
         | tail -n 1
@@ -671,13 +639,9 @@ date_latest_snapshot()
     # Retrieves the date of the latest successful snapshot.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local dst               # Destination (where the snapshots are stored).
-    local latest            # Latest successful snapshot.
-    local tstamp            # Timestamp of the latest successful snapshot.
-
-    dst="${1}"; shift
-    latest=$(get_latest_snapshot "${dst}")
-    tstamp=$(date_timestamp "${latest}")
+    local -r dst="${1}"; shift
+    local -r latest=$(get_latest_snapshot "${dst}")
+    local -r tstamp=$(date_timestamp "${latest}")
 
     date_timestamp_to_hr "${tstamp}"
 }
@@ -689,13 +653,9 @@ date_oldest_snapshot()
     # Retrieves the date of the latest successful snapshot.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local dst               # Destination (where the snapshots are stored).
-    local oldest            # Oldest successful snapshot.
-    local tstamp            # Timestamp of the latest successful snapshot.
-
-    dst="${1}"; shift
-    oldest=$(get_oldest_snapshot "${dst}")
-    tstamp=$(date_timestamp "${oldest}")
+    local -r dst="${1}"; shift
+    local -r oldest=$(get_oldest_snapshot "${dst}")
+    local -r tstamp=$(date_timestamp "${oldest}")
 
     date_timestamp_to_hr "${tstamp}"
 }
@@ -707,9 +667,7 @@ date_timestamp()
     # Retrieves the date of creation of the given directory.
     # Output format is "+%s" (UNIX timestamp).
 
-    local directory         # Directory (should be a snapshot).
-
-    directory="${1}"; shift
+    local -r directory="${1}"; shift
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -731,9 +689,7 @@ date_timestamp_to_hr()
 {
     # Given a timestamp date, returns it in a human readable format (+%F, YYYY-MM-DD).
 
-    local tstamp
-
-    tstamp="${1}"; shift
+    local -r tstamp="${1}"; shift
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -755,9 +711,7 @@ date_year_of()
     # Returns the year of the given date.
     # Output format is "+%Y" (YYYY).
 
-    local d             # Reference date
-
-    d="${1}"; shift
+    local -r d="${1}"; shift
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -778,13 +732,9 @@ date_build()
 {
     # Build a date.
 
-    local y
-    local m
-    local d
-
-    y="${1}"; shift
-    m="${1}"; shift
-    d="${1}"; shift
+    local -r y="${1}"; shift
+    local -r m="${1}"; shift
+    local -r d="${1}"; shift
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -807,9 +757,7 @@ date_start_of_week()
     # Weeks start on Sundays.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-
-    d="${1}"; shift
+    local -r d="${1}"; shift
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -831,11 +779,9 @@ date_start_of_month()
     # Given a date, computes the date of the first day of the month.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-    local cur_month     # Month of the given date.
-    local cur_year      # Year of the given date.
-
-    d="${1}"; shift
+    local -r d="${1}"; shift
+    local cur_month
+    local cur_year
 
     case "${PLATFORM}" in
         OSX|BSD)
@@ -858,21 +804,18 @@ date_start_of_month()
 
 date_add_day()
 {
-    # Returns the given date + nb days.
+    # Returns the given date + n days.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-    local nb            # Number of days to add. Has to be prepend by '+' or '-'.
-
-    d="${1}"; shift
-    nb="${1}"; shift
+    local -r d="${1}"; shift
+    local -r n="${1}"; shift    # Number of days to add. Has to be prepend by '+' or '-'.
 
     case "${PLATFORM}" in
         OSX|BSD)
-            date -v"${nb}"d -jf "%F" "${d}" "+%F"
+            date -v"${n}"d -jf "%F" "${d}" "+%F"
             ;;
         Linux)
-            date --date "${d} ${nb}day" "+%F"
+            date --date "${d} ${n}day" "+%F"
             ;;
         *)
             printf -- "FIXME: date_add_day isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
@@ -884,21 +827,18 @@ date_add_day()
 
 date_add_week()
 {
-    # Returns the given date + nb weeks.
+    # Returns the given date + n weeks.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-    local nb            # Number of weeks to add. Has to be prepend by '+' or '-'.
-
-    d="${1}"; shift
-    nb="${1}"; shift
+    local -r d="${1}"; shift
+    local -r n="${1}"; shift    # Number of weeks to add. Has to be prepend by '+' or '-'.
 
     case "${PLATFORM}" in
         OSX|BSD)
-            date -v"${nb}"w -jf "%F" "${d}" "+%F"
+            date -v"${n}"w -jf "%F" "${d}" "+%F"
             ;;
         Linux)
-            date --date "${d} ${nb}week" "+%F"
+            date --date "${d} ${n}week" "+%F"
             ;;
         *)
             printf -- "FIXME: date_add_week isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
@@ -910,21 +850,18 @@ date_add_week()
 
 date_add_month()
 {
-    # Returns the given date + nb months.
+    # Returns the given date + n months.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-    local nb            # Number of months to add. Has to be prepend by '+' or '-'.
-
-    d="${1}"; shift
-    nb="${1}"; shift
+    local -r d="${1}"; shift
+    local -r n="${1}"; shift    # Number of months to add. Has to be prepend by '+' or '-'.
 
     case "${PLATFORM}" in
         OSX|BSD)
-            date -v"${nb}"m -jf "%F" "${d}" "+%F"
+            date -v"${n}"m -jf "%F" "${d}" "+%F"
             ;;
         Linux)
-            date --date "${d} ${nb}month" "+%F"
+            date --date "${d} ${n}month" "+%F"
             ;;
         *)
             printf -- "FIXME: date_add_month isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
@@ -936,21 +873,18 @@ date_add_month()
 
 date_add_year()
 {
-    # Returns the given date + nb years.
+    # Returns the given date + n years.
     # Output format is "+%F" (YYYY-MM-DD).
 
-    local d             # Reference date.
-    local nb            # Number of years to add. Has to be prepend by '+' or '-'.
-
-    d="${1}"; shift
-    nb="${1}"; shift
+    local -r d="${1}"; shift
+    local -r n="${1}"; shift    # Number of years to add. Has to be prepend by '+' or '-'.
 
     case "${PLATFORM}" in
         OSX|BSD)
-            date -v"${nb}"y -jf "%F" "${d}" "+%F"
+            date -v"${n}"y -jf "%F" "${d}" "+%F"
             ;;
         Linux)
-            date --date "${d} ${nb}year" "+%F"
+            date --date "${d} ${n}year" "+%F"
             ;;
         *)
             printf -- "FIXME: date_add_year isn't supported on this platform (%s).\n" "${PLATFORM}" 1>&2
@@ -965,20 +899,12 @@ info_backup()
     # Prints out some information about the just-ending backup process.
     # Requires rsync to run with the "--stats" and "--human-readable" options.
 
-    local rsync_output          # rsync output.
-    local total_nb_files        # Total number of backuped files.
-    local total_size            # Total size of backuped data.
-    local nb_files              # Number of files actually copied during this run.
-    local size                  # Size of data actually copied during this run.
-    local speedup               # rsync speedup.
-
-    rsync_output="${1}"; shift
-
-    total_nb_files=$(parse_total_nb_files "${rsync_output}")
-    total_size=$(parse_total_size "${rsync_output}")
-    nb_files=$(parse_nb_files "${rsync_output}")
-    size=$(parse_size "${rsync_output}")
-    speedup=$(parse_speedup "${rsync_output}")
+    local -r rsync_output="${1}"; shift                                 # rsync output to parse
+    local -r total_nb_files=$(parse_total_nb_files "${rsync_output}")   # Total number of backed up files
+    local -r total_size=$(parse_total_size "${rsync_output}")           # Total size of backed up data
+    local -r nb_files=$(parse_nb_files "${rsync_output}")               # Number of files actually copied
+    local -r size=$(parse_size "${rsync_output}")                       # Size of data actually copied
+    local -r speedup=$(parse_speedup "${rsync_output}")                 # rsync speedup
 
     printf -- "Successfully backed up %s files (%s).\n" "${total_nb_files}" "${total_size}"
     printf -- "Actually copied %s files (%s) - Speedup : %s.\n" "${nb_files}" "${size}" "${speedup}"
@@ -988,9 +914,7 @@ info_backup()
 
 parse_total_nb_files()
 {
-    local rsync_output
-
-    rsync_output="${1}"
+    local -r rsync_output="${1}"; shift
 
     grep "Number of files:" \
         <<< "${rsync_output}" \
@@ -1001,9 +925,7 @@ parse_total_nb_files()
 
 parse_total_size()
 {
-    local rsync_output
-
-    rsync_output="${1}"
+    local -r rsync_output="${1}"; shift
 
     grep "Total file size:" \
         <<< "${rsync_output}" \
@@ -1014,9 +936,7 @@ parse_total_size()
 
 parse_nb_files()
 {
-    local rsync_output
-
-    rsync_output="${1}"
+    local -r rsync_output="${1}"; shift
 
     grep -E "Number of (regular )?files transferred:" \
         <<< "${rsync_output}" \
@@ -1027,9 +947,7 @@ parse_nb_files()
 
 parse_size()
 {
-    local rsync_output
-
-    rsync_output="${1}"
+    local -r rsync_output="${1}"; shift
 
     grep "Total transferred file size:" \
         <<< "${rsync_output}" \
@@ -1040,9 +958,7 @@ parse_size()
 
 parse_speedup()
 {
-    local rsync_output
-
-    rsync_output="${1}"
+    local -r rsync_output="${1}"; shift
 
     grep "speedup" \
         <<< "${rsync_output}" \
@@ -1055,24 +971,18 @@ info_destination()
 {
     # Prints out some information about the backups.
 
-    local dst                   # Destination.
-    local nb                    # Number of available backups.
-    local oldest                # Name of oldest backup.
-    local latest                # Name of latest backup.
-    local space                 # Amount of space left on destination volume.
-
-    dst="${1}"
-    nb=$(count_snapshots "${dst}")
-    oldest=$(get_oldest_snapshot "${dst}")
-    latest=$(get_latest_snapshot "${dst}")
-    space=$(space_left "${dst}")
+    local -r dst="${1}"; shift
+    local -r nb=$(count_snapshots "${dst}")
+    local -r oldest=$(get_oldest_snapshot "${dst}")
+    local -r latest=$(get_latest_snapshot "${dst}")
+    local -r space=$(space_left "${dst}")
 
     printf -- "%s backups available.\n" "${nb}"
 
-    [ ! -z "${oldest}" ] \
+    [ -n "${oldest}" ] \
         && printf -- "Oldest is %s.\n" "${oldest}"
 
-    [ ! -z "${latest}" ] \
+    [ -n "${latest}" ] \
         && printf -- "Latest is %s.\n" "${latest}"
 
     printf -- "%s left on %s.\n" "${space}" "${dst}"
@@ -1082,11 +992,9 @@ info_destination()
 
 space_left()
 {
-    local dst
+    local -r dst="${1}"; shift
 
-    dst="${1}"
-
-    df -PH -- "${dst}" \
+    df --portability --human-readable -- "${dst}" \
         | tail -n 1 \
         | tr -s " " \
         | cut -d " " -f 4
@@ -1098,11 +1006,8 @@ keep_all()
 {
     # Keeps **everything** for the last $2 hours.
 
-    local dst                   # Destination.
-    local hours                 # Number of hours.
-
-    dst="${1}"; shift
-    hours=$((${1}*60)); shift
+    local -r dst="${1}"; shift              # Destination.
+    local -r hours=$((${1}*60)); shift      # Number of hours.
 
     find "${dst}" -maxdepth 1 -type d -mmin -"${hours}" \
         | grep -E "${DATE_REGEXP}" \
@@ -1115,14 +1020,12 @@ keep_one_per_day()
 {
     # Keeps one backup per day for the last $2 days.
 
-    local dst               # Destination.
-    local limit             # Number of days.
+    local -r dst="${1}"; shift          # Destination.
+    local -r limit="${1}"; shift        # Number of days.
+
     local d1
     local d2
     local i
-
-    dst="${1}"; shift
-    limit="${1}"; shift
 
     d1=$(date_latest_snapshot "${dst}")
 
@@ -1142,17 +1045,15 @@ keep_one_per_week()
 {
     # Keeps one backup per week for the last $2 weeks.
 
-    local dst               # Destination.
-    local limit             # Number of weeks.
-    local latest
+    local -r dst="${1}"; shift          # Destination.
+    local -r limit="${1}"; shift        # Number of weeks.
+
+    local -r latest=$(date_latest_snapshot "${dst}")
+
     local d1
     local d2
     local i
 
-    dst="${1}"; shift
-    limit="${1}"; shift
-
-    latest=$(date_latest_snapshot "${dst}")
     d1=$(date_start_of_week "${latest}")
 
     for ((i=0 ; i<limit ; i++))
@@ -1171,17 +1072,15 @@ keep_one_per_month()
 {
     # Keeps one backup per month for the last $2 months.
 
-    local dst               # Destination.
-    local limit             # Number of months.
-    local latest
+    local -r dst="${1}"; shift          # Destination.
+    local -r limit="${1}"; shift        # Number of months.
+
+    local -r latest=$(date_latest_snapshot "${dst}")
+
     local d1
     local d2
     local i
 
-    dst="${1}"; shift
-    limit="${1}"; shift
-
-    latest=$(date_latest_snapshot "${dst}")
     d1=$(date_start_of_month "${latest}")
 
     for ((i=0 ; i<limit ; i++))
@@ -1200,19 +1099,15 @@ keep_one_per_year()
 {
     # Keeps one backup per year, without limit.
 
-    local dst
-    local oldest
-    local first_year
-    local now_year
+    local -r dst="${1}"; shift
+
+    local -r oldest=$(date_oldest_snapshot "${dst}")
+    local -r first_year=$(date_year_of "${oldest}")
+    local -r now_year=$(date_year_of "$(date "+%F")")
+
     local d1
     local d2
     local i
-
-    dst="${1}"; shift
-    oldest=$(date_oldest_snapshot "${dst}")
-
-    first_year=$(date_year_of "${oldest}")
-    now_year=$(date_year_of "$(date "+%F")")
 
     for ((i=first_year ; i<now_year ; i++))
     do
@@ -1229,15 +1124,20 @@ keep_between()
 {
     # Keeps one backup betwen the two given dates (interval [$1 ; $2[)
 
-    local dst       # Destination.
-    local d1        # Oldest date of the considered dates interval.
-    local d2        # Latest date of the considered dates interval.
+    local -r dst="${1}"; shift      # Destination.
+    local -r d1="${1}"; shift       # Oldest date of the considered dates interval.
+    local -r d2="${1}"; shift       # Latest date of the considered dates interval.
 
-    dst="${1}"; shift
-    d1="${1}"; shift
-    d2="${1}"; shift
+    local -r newer="${PROGDIR}/wabac.running/newer"
+    local -r older="${PROGDIR}/wabac.running/older"
 
-    find "${dst}" -maxdepth 1 -type d \( -newermt "${d1}" -a ! -newermt "${d2}" \) \
+    rm -f -- "${newer}"
+    rm -f -- "${older}"
+
+    touch -t "${d1}" "${newer}"
+    touch -t "${d2}" "${older}"
+
+    find "${dst}" -maxdepth 1 -type d \( -newer "${newer}" -a ! -newer "${older}" \) \
         | grep -E "${DATE_REGEXP}" \
         | sort \
         | tail -n 1
@@ -1249,19 +1149,12 @@ remove_expired()
 {
     # Removes expired backups.
 
-    local dst                       # Destination.
-    local nb_hours                  # Number of hours.
-    local nb_days                   # Number of days.
-    local nb_weeks                  # Number of weeks.
-    local nb_months                 # Number of months.
-    local keep_file                 # File that lists snapshots to keep.
-
-    dst="${1}"; shift
-    nb_hours="${1}"; shift
-    nb_days="${1}"; shift
-    nb_weeks="${1}"; shift
-    nb_months="${1}"; shift
-    keep_file="${PROGDIR}/wabac.running/keep"
+    local -r dst="${1}"; shift              # Destination.
+    local -r nb_hours="${1}"; shift         # Number of hours.
+    local -r nb_days="${1}"; shift          # Number of days.
+    local -r nb_weeks="${1}"; shift         # Number of weeks.
+    local -r nb_months="${1}"; shift        # Number of months.
+    local -r keep_file="${PROGDIR}/wabac.running/keep"  # File that lists snapshots to keep.
 
     {
         keep_all "${dst}" "${nb_hours}"
@@ -1280,17 +1173,11 @@ remove_useless()
 {
     # Removes useless backups (those that are **NOT** listed in the given `keep_file`).
 
-    local dst                       # Destination.
-    local keep_file                 # File that lists snapshots **TO KEEP**.
-    local snapshots_file            # File that lists all existing snapshots.
-    local kickout                   # File that lists snapshots to delete.
-    local rm_count                  # Number of snapshots to delete.
+    local -r dst="${1}"; shift              # Destination.
+    local -r keep_file="${1}"; shift        # File that lists snapshots **TO KEEP**.
 
-    dst="${1}"; shift
-    keep_file="${1}"; shift
-
-    snapshots_file="${PROGDIR}/wabac.running/backups"
-    kickout="${PROGDIR}/wabac.running/kickout"
+    local -r snapshots_file="${PROGDIR}/wabac.running/backups"      # File that lists all existing snapshots.
+    local -r kickout="${PROGDIR}/wabac.running/kickout"             # File that lists snapshots to delete.
 
     # Builds the list of backups to remove :
     #   Sorts the two files, merges them and removes duplicates.
@@ -1303,7 +1190,7 @@ remove_useless()
         | uniq -u > "${kickout}"
 
     # Removes what's useless :
-    rm_count=$(wc -l < "${kickout}" | tr -d " ")
+    local -r rm_count=$(wc -l < "${kickout}" | tr -d " ")
 
     case "${rm_count}" in
         0)
@@ -1334,9 +1221,7 @@ remove_backup()
 {
     # Removes the given backup.
 
-    local bck           # Backup to delete.
-
-    bck="${1}"
+    local bck="${1}"           # Backup to delete.
 
     if [ "${DRYRUN}" -gt 0 ]
     then
@@ -1353,18 +1238,15 @@ remove_oldest()
 {
     # Removes the oldest backup, only if it's not the only one remaining.
 
-    local exit_code
-    local dst               # Destination
-    local nb_backups
-    local oldest
+    local -r dst="${1}"; shift      # Destination
 
-    dst="${1}"; shift
-    exit_code=0
-    nb_backups=$(count_snapshots "${dst}")
+    local -r nb_backups=$(count_snapshots "${dst}")
+
+    local exit_code=0
 
     if [ "${nb_backups}" -gt 1 ]
     then
-        oldest=$(get_oldest_snapshot "${dst}")
+        local -r oldest=$(get_oldest_snapshot "${dst}")
         remove_backup "${oldest}"
     else
         printf -- "Can't remove the oldest backup : it's the last one remaining.\n" 1>&2
@@ -1381,13 +1263,9 @@ lock()
     # Creates a lock to ensure we run only one instance at the same time.
     # We use mkdir because it is atomic.
 
-    local exit_code
-    local mkdir_output
-    local lockdir
-
-    lockdir="${PROGDIR}/wabac.running"
-    mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
-    exit_code=$?
+    local -r exit_code=$?
+    local -r mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
+    local -r lockdir="${PROGDIR}/wabac.running"
 
     if [ "${exit_code}" -eq 0 ]
     then
@@ -1406,9 +1284,8 @@ unlock()
     # Allows another instance of the WABAC Machine to run.
     # As we store every temp file in the lockdir directory, it also deletes those.
 
-    local lockdir
+    local -r lockdir="${PROGDIR}/wabac.running"
 
-    lockdir="${PROGDIR}/wabac.running"
     rm -Rf "${lockdir}"
 }
 
@@ -1445,8 +1322,8 @@ handle_sigs()
 
     if [ "${sig}" -gt 127 ]
     then
-        let sig-=128
-        signame="SIG"$(kill -l -- ${sig})
+        sig=$(( sig-128 ))
+        signame="SIG"$(kill -l -- "${sig}")
     else
         signame="RSYNC_INTERRUPTED"
     fi
@@ -1454,7 +1331,7 @@ handle_sigs()
     printf -- "Received %s. Backup interrupted !\n" "${signame}" 1>&2
 
     # Propagate :
-    kill -s ${sig} $$
+    kill -s "${sig}" $$
 }
 
 
@@ -1479,7 +1356,7 @@ get_rsync()
     exit_code=0
     rsync_cmd="${1}"; shift
 
-    if [ ! -z "${rsync_cmd}" ]      # A path is specified in the config file.
+    if [ -n "${rsync_cmd}" ]      # A path is specified in the config file.
     then
         if [ ! -f "${rsync_cmd}" ] || [ ! -x "${rsync_cmd}" ]
         then
@@ -1716,15 +1593,23 @@ EOH
 # # #   RUN   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 # PROGNAME and version :
-readonly PROGNAME=$(basename "${0}")
-readonly PROGDIR=$(cd "$(dirname "$0")" || exit 1; pwd)    # Rather ugly but, well...
-readonly VERSION="20151110"
+PROGNAME=$(basename "${0}")
+PROGDIR=$(cd "$(dirname "$0")" || exit 1; pwd)    # Rather ugly but, well...
+VERSION="20210706"
 
 # Date format :
-readonly DATE_REGEXP="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+DATE_REGEXP="[0-9]{4}-[0-9]{2}-[0-9]{2}"
 
 # Get the platform :
-readonly PLATFORM=$(getOSFamily)
+PLATFORM=$(getOSFamily)
+
+# Make all these readonly:
+
+readonly "${PROGNAME}"
+readonly "${PROGDIR}"
+readonly "${VERSION}"
+readonly "${DATE_REGEXP}"
+readonly "${PLATFORM}"
 
 # Arguments ;
 readonly -a ARGS=("${@}")

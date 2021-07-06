@@ -534,7 +534,7 @@ backup()
         # Start the backup process.
         while [ "${completed}" -gt 0 ]
         do
-            rsync_output=$($rsync_cmd "${opts[@]}" -- "${src}" "${dst}/inProgress" 2>&1)
+            rsync_output=$($rsync_cmd ${opts[@]} -- "${src}" "${dst}/inProgress" 2>&1)
             exit_code=$?
 
             completed=$(grep -c "No space left on device (28)\|Result too large (34)" <<< "${rsync_output}")
@@ -994,7 +994,7 @@ space_left()
 {
     local -r dst="${1}"; shift
 
-    df --portability --human-readable -- "${dst}" \
+    df -P -h -- "${dst}" \
         | tail -n 1 \
         | tr -s " " \
         | cut -d " " -f 4
@@ -1264,8 +1264,8 @@ lock()
     # We use mkdir because it is atomic.
 
     local -r exit_code=$?
-    local -r mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
     local -r lockdir="${PROGDIR}/wabac.running"
+    local -r mkdir_output=$(mkdir -- "${lockdir}" 2>&1)
 
     if [ "${exit_code}" -eq 0 ]
     then
@@ -1604,12 +1604,11 @@ DATE_REGEXP="[0-9]{4}-[0-9]{2}-[0-9]{2}"
 PLATFORM=$(getOSFamily)
 
 # Make all these readonly:
-
-readonly "${PROGNAME}"
-readonly "${PROGDIR}"
-readonly "${VERSION}"
-readonly "${DATE_REGEXP}"
-readonly "${PLATFORM}"
+readonly PROGNAME
+readonly PROGDIR
+readonly VERSION
+readonly DATE_REGEXP
+readonly PLATFORM
 
 # Arguments ;
 readonly -a ARGS=("${@}")

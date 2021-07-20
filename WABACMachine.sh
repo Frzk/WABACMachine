@@ -905,8 +905,9 @@ info_backup()
     local -r nb_files=$(parse_nb_files "${rsync_output}")               # Number of files actually copied
     local -r size=$(parse_size "${rsync_output}")                       # Size of data actually copied
     local -r speedup=$(parse_speedup "${rsync_output}")                 # rsync speedup
+    local -r duration=$(compute_time_spent "${rsync_output}")           # Duration
 
-    printf -- "Successfully backed up %s files (%s).\n" "${total_nb_files}" "${total_size}"
+    printf -- "Successfully backed up %s files (%s) in %s seconds.\n" "${total_nb_files}" "${total_size}" "${duration}"
     printf -- "Actually copied %s files (%s) - Speedup : %s.\n" "${nb_files}" "${size}" "${speedup}"
 }
 
@@ -963,6 +964,49 @@ parse_speedup()
     grep "speedup" \
         <<< "${rsync_output}" \
         | cut -d " " -f 8
+}
+
+
+
+parse_file_list_generation_time()
+{
+    local -r rsync_output="${1}"; shift
+
+    grep "File list generation time" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 5
+}
+
+
+
+parse_file_list_transfer_time()
+{
+    local -r rsync_output="${1}"; shift
+
+    grep "File list transfer time" \
+        <<< "${rsync_output}" \
+        | cut -d " " -f 5
+}
+
+
+
+calc()
+{
+    awk "BEGIN { print $*}";
+}
+
+
+
+compute_time_spent()
+{
+    local -r rsync_output="${1}"; shift
+
+    local -r flgt=$(parse_file_list_generation_time "${rsync_output}")
+    local -r fltt=$(parse_file_list_transfer_time "${rsync_output}")
+
+    local -r sum="${flgt} + ${fltt}"
+
+    calc "${sum}"
 }
 
 
@@ -1128,16 +1172,7 @@ keep_between()
     local -r d1="${1}"; shift       # Oldest date of the considered dates interval.
     local -r d2="${1}"; shift       # Latest date of the considered dates interval.
 
-    local -r newer="${PROGDIR}/wabac.running/newer"
-    local -r older="${PROGDIR}/wabac.running/older"
-
-    rm -f -- "${newer}"
-    rm -f -- "${older}"
-
-    touch -t "${d1}" "${newer}"
-    touch -t "${d2}" "${older}"
-
-    find "${dst}" -maxdepth 1 -type d \( -newer "${newer}" -a ! -newer "${older}" \) \
+    find "${dst}" -maxdepth 1 -type d \( -newermt "${d1}" -a ! -newermt "${d2}" \) \
         | grep -E "${DATE_REGEXP}" \
         | sort \
         | tail -n 1
@@ -1595,7 +1630,7 @@ EOH
 # PROGNAME and version :
 PROGNAME=$(basename "${0}")
 PROGDIR=$(cd "$(dirname "$0")" || exit 1; pwd)    # Rather ugly but, well...
-VERSION="20210706"
+VERSION="20210720"
 
 # Date format :
 DATE_REGEXP="[0-9]{4}-[0-9]{2}-[0-9]{2}"
